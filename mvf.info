@@ -1,4 +1,3 @@
-; $Id$
 name = Measured Value Field
 description = Defines a field with an amount and a unit of measurement.
 dependencies[] = content
