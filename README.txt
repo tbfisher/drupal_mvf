@@ -1,6 +1,5 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Measured Value Field module.
-;; $Id$
 ;;
 ;; Started as fork of Money CCK field (http://drupal.org/project/money)
 ;;
