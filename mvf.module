@@ -11,12 +11,12 @@
 /**
  * Module that defines field type used for sub field 'value'.
  */
-define('MVF_VALUE_MODULE', 'number');
+define('MVF_MODULE_VALUE', 'number');
 
 /**
  * Module that defines field type used for sub field 'unit'.
  */
-define('MVF_UNIT_MODULE', 'entityreference');
+define('MVF_MODULE_UNIT', 'entityreference');
 
 /**
  * Constant that denotes formatting the entered value in the originally entered
@@ -47,8 +47,8 @@ function mvf_field_info() {
   $field_info = array();
 
   // Collecting data from modules that define our sub fields.
-  $value = module_invoke(MVF_VALUE_MODULE, 'field_info');
-  $unit = module_invoke(MVF_UNIT_MODULE, 'field_info');
+  $value = module_invoke(MVF_MODULE_VALUE, 'field_info');
+  $unit = module_invoke(MVF_MODULE_UNIT, 'field_info');
 
   // We narrow down a list of field types eligible for units sub field. As we
   // currently only support entityreference field type.
@@ -62,7 +62,7 @@ function mvf_field_info() {
       $unit_settings['settings']['target_type'] = 'units_unit';
 
       $field_info['mvf_' . $value_field_type . '_' . $unit_field_type] = array(
-        'label' => t('Unit Measured @type', array('@type' => $value_settings['label'])),
+        'label' => t('Measured @type', array('@type' => $value_settings['label'])),
         'settings' => array(
           'value' => isset($value_settings['settings']) ? $value_settings['settings'] : array(),
           'unit' => isset($unit_settings['settings']) ? $unit_settings['settings'] : array(),
@@ -71,7 +71,7 @@ function mvf_field_info() {
               'field_type' => $value_field_type,
               'widget' => $value_settings['default_widget'],
               'formatter' => $value_settings['default_formatter'],
-              'module' => MVF_VALUE_MODULE,
+              'module' => MVF_MODULE_VALUE,
               'label' => t('Value'),
               'not_supported_widgets' => array(),
             ),
@@ -79,7 +79,7 @@ function mvf_field_info() {
               'field_type' => $unit_field_type,
               'widget' => $unit_settings['default_widget'],
               'formatter' => $unit_settings['default_formatter'],
-              'module' => MVF_UNIT_MODULE,
+              'module' => MVF_MODULE_UNIT,
               'label' => t('Unit Measure'),
               // We can't support these widgets because entityreference module
               // tries to pull up field settings by field name, in our case
@@ -145,15 +145,6 @@ function mvf_field_formatter_info() {
     ),
   );
 }
-
-/**
- * Implements hook_ctools_plugin_directory().
- */
-/*function mvf_ctools_plugin_directory($module, $plugin) {
-  if ($module == 'entityreference') {
-    return 'plugins/' . $plugin;
-  }
-}*/
 
 /**
  * Implements hook_field_settings_form().
@@ -379,7 +370,7 @@ function mvf_field_instance_settings_form($field, $instance) {
           break;
 
         case 'value':
-          // Number module native 'min' and 'max' doesn't make sense in MVF,
+          // Number module native 'min' and 'max' don't make sense in MVF,
           // because min and max should be defined considering unit measure, and
           // not only value.
           $extra['min']['#access'] = FALSE;
@@ -578,7 +569,6 @@ function mvf_field_formatter_settings_form($field, $instance, $view_mode, $form,
     }
     // Since we update values via #ajax, the chosen value in $superior_formatter
     // can be overriden in $form_state by the current unsaved (yet) value.
-    $formatter = FALSE;
     if (isset($form_state['values']['fields'][$field['field_name']]['settings_edit_form']['settings'][$subfield]['formatter'])) {
       $formatter = $form_state['values']['fields'][$field['field_name']]['settings_edit_form']['settings'][$subfield]['formatter'];
     }
