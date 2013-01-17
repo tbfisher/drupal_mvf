@@ -2,802 +2,1181 @@
 
 /**
  * @file
- * Measured Value Field module.
+ * Define a field type of measured value.
+ *
+ * Define a Field API field type that composes of a value and a unit of
+ * measurement in which value is measured.
  */
 
 /**
- * Implementation of hook_init().
- */ 
-function mvf_init() {
-  if (module_exists('diff')) {
-    module_load_include('inc', 'mvf', 'includes/mvf.diff');
-  }
-}
-
+ * Module that defines field type used for sub field 'value'.
+ */
+define('MVF_VALUE_MODULE', 'number');
 
 /**
- * Implementation of hook_theme().
+ * Module that defines field type used for sub field 'unit'.
  */
-function mvf_theme() {
-  return array(
-    'mvf_widget' => array('arguments' => array('element' => NULL)),
-    'mvf_formatter_default' => array('arguments' => array('element' => NULL), 'function' => 'theme_mvf_formatter_generic'),
-    'mvf_formatter_nozeros' => array('arguments' => array('element' => NULL), 'function' => 'theme_mvf_formatter_generic'),
-    'mvf_formatter_unformatted' => array('arguments' => array('element' => NULL)),
-    'mvf_field' => array('arguments' => array('value' => NULL, 'unit' => NULL, 'display_options' => NULL, 'separator' => NULL, 'range_separator' => NULL)),
+define('MVF_UNIT_MODULE', 'entityreference');
+
+/**
+ * Constant that denotes formatting the entered value in the originally entered
+ * unit measure.
+ */
+define('MVF_FORMATTER_ORIGINAL_UNIT', -1);
+
+/**
+ * Implements hook_menu().
+ */
+function mvf_menu() {
+  $items = array();
+
+  $items['mvf/ajax'] = array(
+    'page callback' => 'mvf_ajax',
+    'access arguments' => array('administer site configuration'),
+    'delivery callback' => 'ajax_deliver',
+    'type' => MENU_CALLBACK,
   );
+
+  return $items;
 }
 
 /**
- * Implementation of hook_field_info().
+ * Implements hook_field_info().
  */
 function mvf_field_info() {
-  return array('mvf' => array('label' => t('Measured Value')));
-}
+  $field_info = array();
 
-/**
- * Implementation of hook_field_settings().
- */
-function mvf_field_settings($op, $field) {
-  switch ($op) {
-    case 'form':
-      $form = array();
-      $minmax_fields = array(
-        'min' => array(
-          '#title' => t('Minimum'),
-          '#description' => t('Use this option to define the minimum value that can be accepted for this field. Leave blank for no explicit limitation.'),
+  // Collecting data from modules that define our sub fields.
+  $value = module_invoke(MVF_VALUE_MODULE, 'field_info');
+  $unit = module_invoke(MVF_UNIT_MODULE, 'field_info');
+
+  // We narrow down a list of field types eligible for units sub field. As we
+  // currently only support entityreference field type.
+  $unit = array(
+    'entityreference' => $unit['entityreference'],
+  );
+
+  foreach ($value as $value_field_type => $value_settings) {
+    foreach ($unit as $unit_field_type => $unit_settings) {
+      // We hard code 'target_type' setting of unit subfield to be 'units_unit'.
+      $unit_settings['settings']['target_type'] = 'units_unit';
+
+      $field_info['mvf_' . $value_field_type . '_' . $unit_field_type] = array(
+        'label' => t('Unit Measured @type', array('@type' => $value_settings['label'])),
+        'settings' => array(
+          'value' => isset($value_settings['settings']) ? $value_settings['settings'] : array(),
+          'unit' => isset($unit_settings['settings']) ? $unit_settings['settings'] : array(),
+          'meta_info' => array(
+            'value' => array(
+              'field_type' => $value_field_type,
+              'widget' => $value_settings['default_widget'],
+              'formatter' => $value_settings['default_formatter'],
+              'module' => MVF_VALUE_MODULE,
+              'label' => t('Value'),
+              'not_supported_widgets' => array(),
+            ),
+            'unit' => array(
+              'field_type' => $unit_field_type,
+              'widget' => $unit_settings['default_widget'],
+              'formatter' => $unit_settings['default_formatter'],
+              'module' => MVF_UNIT_MODULE,
+              'label' => t('Unit Measure'),
+              // We can't support these widgets because entityreference module
+              // tries to pull up field settings by field name, in our case
+              // it won't be able to find its settings in the structure how we
+              // keep it in MVF.
+              'not_supported_widgets' => array('entityreference_autocomplete', 'entityreference_autocomplete_tags'),
+            ),
+          ),
         ),
-        'max' => array(
-          '#title' => t('Maximum'),
-          '#description' => t('Use this option to define the maximum value that can be accepted for this field. Leave blank for no explicit limitation.'),
+        'instance_settings' => array(
+          'value' => isset($value_settings['instance_settings']) ? $value_settings['instance_settings'] : array(),
+          'unit' => isset($unit_settings['instance_settings']) ? $unit_settings['instance_settings'] : array(),
         ),
+        'default_widget' => 'mvf_widget_default',
+        'default_formatter' => 'mvf_formatter_default',
       );
-      $form['value_limits'] = array(
-        '#type' => 'fieldset',
-        '#title' => t('Measured Values limits'),
-        '#collapsed' => FALSE,
-        '#collapsible' => FALSE, 
-        '#description' => t('Choose value limits, that will apply both to "From" and "To" values.'),
-      );
-      foreach ($minmax_fields as $name => $info) {
-        $default_attributes = array('class' => 'formatted-number');
-        $default_value = (isset($field[$name]) ? parse_formatted_number($field[$name]) : '');
-        if (!is_numeric($default_value)) {
-          $default_value = '';
-        }
-        else {
-          // Initialize default value with as many decimal digits as necessary.
-          $decimals = (strpos($default_value, '.') !== FALSE ? drupal_strlen(preg_replace('#^.*\.(.*)$#', '\1', $default_value)) : 0);
-          $default_value = format_number($default_value, $decimals);
-        }
-        $form['value_limits'][$name] = array(
-          '#type' => 'textfield',
-          '#title' => $info['#title'],
-          '#size' => 32,
-          '#maxlength' => 30,
-          '#default_value' => $default_value,
-          '#attributes' => $default_attributes,
-          '#description' => $info['#description'],
-        );
-      }
-      
-      $form['precision'] = array(
-        '#type' => 'select',
-        '#title' => t('Precision'),
-        '#options' => drupal_map_assoc(range(1, 20)),
-        '#default_value' => (is_numeric($field['precision']) && (int)$field['precision'] > 0 ? $field['precision'] : 10),
-        '#description' => t('The total number of digits to store in the database, including digits to the right of the decimal point.'),
-      );
-      $form['decimals'] = array(
-        '#type' => 'select',
-        '#title' => t('Decimals'),
-        '#options' => drupal_map_assoc(range(0, 4)),
-        '#default_value' => (is_numeric($field['decimals']) && (int)$field['decimals'] >= 0 ? $field['decimals'] : 2),
-        '#description' => t('The number of digits to the right of the decimal point.'),
-      );
-      $description = t("Display a matching second value field as a 'To' value. If marked 'Optional' field will be presented but not required. If marked 'Required' the 'To' value will be required if the 'From' value is required or filled in.");
-      $description .= '<p class="error">' . t('Changing the %name setting after data has been created could result in the loss of data!', array('%name' => 'To value')) . '</p>';
-      $form['input']['tovalue'] = array(
-        '#type' => 'radios', '#title' => t('"To" Value'),
-        '#options' => array('' => t('Disabled'), 'optional' => t('Optional'), 'required' => t('Required')),
-        '#description' => $description,
-        '#default_value' => isset($field['tovalue']) ? $field['tovalue'] : '',
-      );
-      formatted_number_add_js();
-      return $form;
-
-    case 'save':
-      return array('precision', 'decimals', 'tovalue', 'min', 'max');
-
-    case 'database columns':
-      $precision = (isset($field['precision']) ? $field['precision'] : 10);
-      $decimals = (isset($field['decimals']) ? $field['decimals'] : 2);
-      $db_columns = array(
-        'value'  => array('type' => 'numeric', 'precision' => $precision, 'scale' => $decimals, 'not null' => FALSE, 'sortable' => TRUE, 'views' => TRUE),
-        'unit'   => array('type' => 'varchar', 'length' => 64, 'not null' => FALSE, 'sortable' => TRUE, 'views' => TRUE),
-      );
-      if (!empty($field['tovalue'])) {
-        $db_columns['value2'] = $db_columns['value'];    
-        // We don't want CCK to create additional columns, just the first.
-        // We modify them our own way in views data.
-        $db_columns['value2']['views'] = FALSE;
-      }
-      return $db_columns;
-      
-    case 'views data':
-      $data = content_views_field_views_data($field);
-      $db_info = content_database_info($field);
-      $table_alias = content_views_tablename($field);
-      
-      // Swap in the CCK filter handler with custom one.
-      $data[$table_alias][$field['field_name'] .'_value']['filter']['handler'] = 'mvf_filter_handler';
-      
-      // Add in another set of fields for the "To" value.
-      if (!empty($field['tovalue'])) {
-        $data[$table_alias][$field['field_name'] .'_value']['field']['title'] = $data[$table_alias][$field['field_name'] .'_value']['title'];
-        $data[$table_alias][$field['field_name'] .'_value']['field']['title short'] = $data[$table_alias][$field['field_name'] .'_value']['title short'];
-
-        $data[$table_alias][$field['field_name'] .'_value2'] = $data[$table_alias][$field['field_name'] .'_value'];
-
-        $data[$table_alias][$field['field_name'] .'_value']['title'] .= ' - ' . t('"From" value');
-        $data[$table_alias][$field['field_name'] .'_value']['title short'] .= ' - ' . t('"From" value');
-        $data[$table_alias][$field['field_name'] .'_value']['field']['title'] .= ' - ' . t('"From" value');
-        $data[$table_alias][$field['field_name'] .'_value']['field']['title short'] .= ' - ' . t('"From" value');
-        
-        $data[$table_alias][$field['field_name'] .'_value2']['title'] .= ' - ' . t('"To" value');
-        $data[$table_alias][$field['field_name'] .'_value2']['title short'] .= ' - ' . t('"To" value');
-        $data[$table_alias][$field['field_name'] .'_value2']['field']['title'] .= ' - ' . t('"To" value');
-        $data[$table_alias][$field['field_name'] .'_value2']['field']['title short'] .= ' - ' . t('"To" value');
-
-        $data[$table_alias][$field['field_name'] .'_value2']['field']['field'] .= '2';
-        $data[$table_alias][$field['field_name'] .'_value2']['sort']['field'] .= '2';
-      }
-      return $data;
-  }
-}
-
-/**
- * Implementation of hook_content_is_empty().
- */
-function mvf_content_is_empty($item, $field) {
-  if ($item['value'] == '') {
-    return TRUE;
-  }
-  elseif($field['tovalue'] == 'required' && $item['value2'] == '') {
-    return TRUE;
-  }
-  return FALSE;
-}
-
-/**
- * Implementation of hook_field().
- */
-function mvf_field($op, &$node, $field, &$items, $teaser, $page) {
-  if ($op == 'validate') {
-    if (is_array($items)) {
-      foreach ($items as $delta => $item) {        
-        mvf_validate_field_value($field, $delta, $item);
-      }
     }
   }
-  if ($op == 'presave') {
-    if (is_array($items)) {
-      foreach ($items as $delta => $item) {
-        // Empty "To" value should be saved equal to "From" value
-        if ($item['value2'] == '') {
-          $items[$delta]['value2'] = $items[$delta]['value'];
-        }
-      }
-    }
-  }
+  return $field_info;
 }
 
 /**
- * Implementation of hook_field_formatter_info().
+ * Implements hook_field_widget_info().
+ */
+function mvf_field_widget_info() {
+  $field_types = array_keys(module_invoke('mvf', 'field_info'));
+  return array(
+    'mvf_widget_default' => array(
+      'label' => t('Configurable sub widgets'),
+      'description' => t('Default widget for unit measured field. Allows you to choose widgets independently for value and unit measure sub fields.'),
+      'field types' => $field_types,
+      'settings' => array(
+        'meta_info' => array(
+          'unit' => array(
+            'weight' => 0,
+          ),
+          'value' => array(
+            'weight' => 0,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_formatter_info().
  */
 function mvf_field_formatter_info() {
+  $field_types = array_keys(module_invoke('mvf', 'field_info'));
   return array(
-    'default' => array('label' => t('Default'), 'field types' => array('mvf')),
-    'nozeros' => array('label' => t('Remove redundant zeros'), 'field types' => array('mvf')),
-    'unformatted' => array('label' => t('Unformatted'), 'field types' => array('mvf')),
-  );
-}
-
-/**
- * Implementation of hook_widget_info().
- */
-function mvf_widget_info() {
-  return array(
-    'mvf_widget' => array(
-      'label' => t('Values and unit'), 
-      'field types' => array('mvf'),
+    'mvf_formatter_default' => array(
+      'label' => t('Default'),
+      'description' => t('Default formatter for unit measured field. Allows you to choose formatters independently for value and unit measure sub fields.'),
+      'field types' => $field_types,
+      'settings' => array(
+        'unit' => array(),
+        'value' => array(),
+        'mvf' => array(
+          'formatter_units_unit' => MVF_FORMATTER_ORIGINAL_UNIT,
+        ),
+      ),
     ),
   );
 }
 
 /**
- * Implementation of hook_widget_settings().
+ * Implements hook_ctools_plugin_directory().
  */
-function mvf_widget_settings($op, $widget) {
-  switch ($op) {
-    case 'form':
-      $form = array();
-      $options = array('short' => t('Short name'), 'full' => t('Full name'));
-      $form['unit_select_mode'] = array(
-        '#type' => 'radios',
-        '#title' => t('Unit selection mode'),
-        '#options' => $options,
-        '#default_value' => (isset($widget['unit_select_mode']) && isset($options[$widget['unit_select_mode']]) ? $widget['unit_select_mode'] : 'short'),
-        '#required' => TRUE,
-        '#description' => t('Choose the format of the label that will be displayed for options of the units select list.'),
-      );
-      $options_single = mvf_get_display_modes_single();
-      $options_range = mvf_get_display_modes_range();
-      $form['unit_display'] = array(
-        '#type' => 'fieldset',
-        '#title' => t('MVF display mode'),
-        '#collapsed' => FALSE,
-        '#collapsible' => FALSE, 
-        '#description' => t('Choose the format that will be used to display this Measured Value field when a node is rendered.'),
-      );
-      $form['unit_display']['unit_display_mode_single'] = array(
-        '#type' => 'select',
-        '#title' => t('Single value display mode'),
-        '#options' => $options_single,
-        '#default_value' => (isset($widget['unit_display_mode_single']) && isset($options_single[$widget['unit_display_mode_single']]) ? $widget['unit_display_mode_single'] : 'f|+|u'),
-        '#required' => TRUE,
-        '#description' => t('Single value display mode will be used when "To" value is disabled or enabled but not filled in.'),
-      );
-      $form['unit_display']['unit_display_mode_range'] = array(
-        '#type' => 'select',
-        '#title' => t('Range display mode'),
-        '#options' => $options_range,
-        '#default_value' => (isset($widget['unit_display_mode_range']) && isset($options_range[$widget['unit_display_mode_range']]) ? $widget['unit_display_mode_range'] : 'f|-|t|+|u'),
-        '#required' => TRUE,
-        '#description' => t('Range display mode will be used when both "From" and "To" values are filled in.'),
-      );
-      $options = array('field' => t('Field precision'), 'unit' => t('Unit precision'));
-      $form['decimals_display_mode'] = array(
-        '#type' => 'radios',
-        '#title' => t('Decimals display mode'),
-        '#options' => $options,
-        '#default_value' => (isset($widget['decimals_display_mode']) && isset($options[$widget['decimals_display_mode']]) ? $widget['decimals_display_mode'] : 'field'),
-        '#required' => TRUE,
-        '#description' => t('Choose the method to select the number of decimals used to display the field. The standard precision for each unit is displayed in the <em>Available units</em> list.'),
-      );
-      $unit_options = array();
-      foreach (units_get_units() as $id => $unit) {
-        if (units_unit_is_enabled($id)) {
-          $unit_options[$id] = $unit['fullname'] .' ['. $unit['decimals'] .']';
+/*function mvf_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'entityreference') {
+    return 'plugins/' . $plugin;
+  }
+}*/
+
+/**
+ * Implements hook_field_settings_form().
+ */
+function mvf_field_settings_form($field, $instance, $has_data) {
+  $form = array();
+
+  // Firstly we recursively merge field settings for each of our sub-fields.
+  foreach ($field['settings'] as $subfield => $settings) {
+    switch ($subfield) {
+      case 'value':
+      case 'unit':
+        // Mocking up field.
+        $mock_field = mvf_field_mockup($field, $subfield);
+        // Mocking up instance.
+        $mock_instance = mvf_instance_mockup($field, $instance, $subfield);
+
+        $extra = module_invoke($field['settings']['meta_info'][$subfield]['module'], 'field_settings_form', $mock_field, $mock_instance, $has_data);
+        // Doing any customizations in the output of a sub field hook.
+        switch ($subfield) {
+          case 'unit':
+            // We have to add our custom validate function that will "repair"
+            // what brakes entity reference native validate function.
+            $extra['#element_validate'][] = 'mvf_entityreference_field_settings_validate';
+            // We hardcore entity type to be 'units_unit'. It would be only
+            // confusing to end user letting him see this setting. We have to do
+            // it in a process function, because entityreference module defines
+            // its actual form elements in its own process function. We have no
+            // other choice.
+            $extra['#process'][] = 'mvf_entityreference_field_settings_process';
+            break;
         }
-      }
-      $description  = t('Choose the units that you want to enable for this field. Do not select any unit to enable them all.');
-      $description .= '<br/>';
-      $description .= t('The number between square brakets indicates the standard precision for each unit.');
-      $description .= '<br/><br/>';
-      $description .= t(
-        '<strong>Hint:</strong> visit !page and setup site-wide list of units you want to work with. This will save you from browsing long lists of units in each MVF configuration.',
-        array('!page' => l('Units configuration page', 'admin/content/units'))
-      );
-      $form['units'] = array(
-        '#type' => 'fieldset',
-        '#title' => t('Available units'),
-        '#collapsible' => TRUE, '#collapsed' => TRUE,
-        '#description' => $description,
-      );
-      if (isset($widget['allowed_units']) && is_array($widget['allowed_units'])) {
-        // Get filtered array.
-        $allowed_units = array_filter($widget['allowed_units']);
-        // If not empty, create array for the form element values.
-        if (!empty($allowed_units)) {
-          $allowed_units = array_keys($allowed_units);
-          $allowed_units = array_combine($allowed_units, $allowed_units);
+
+        $form[$subfield] = array(
+          '#tree' => TRUE,
+        );
+        if (is_array($extra) && !empty($extra)) {
+          $form[$subfield] += array(
+            '#type' => 'fieldset',
+            '#title' => $field['settings']['meta_info'][$subfield]['label'] . ' '. 'Settings',
+            '#collapsible' => TRUE,
+          ) + $extra;
         }
-      }
-      else {
-        $allowed_units = array();
-      }
-      $form['units']['allowed_units'] = array(
-        '#type' => 'checkboxes',
-        '#options' => $unit_options,
-        '#default_value' => $allowed_units,
-        '#checkall' => TRUE,
-        '#prefix' => '<div class="mvf-unit-checkboxes">', '#suffix' => '</div>',
-      );
-      drupal_add_css(drupal_get_path('module', 'mvf') .'/mvf.css');
-      return $form;
+        break;
 
-    case 'save':
-      return array('unit_select_mode', 'unit_display_mode_single', 'unit_display_mode_range', 'decimals_display_mode', 'allowed_units');
-  }
-}
+      case 'meta_info':
+        $form['meta_info'] = array(
+          '#type' => 'fieldset',
+          '#title' => t('Sub Widgets'),
+          '#tree' => TRUE,
+          '#collapsible' => TRUE,
+        );
+        // Get a list of widgets for each of the sub fields.
+        $info = _field_info_collate_types();
+        foreach ($settings as $subfield => $meta_info) {
+          // Filtering out only those widgets that apply to our sub field.
+          $widgets = array();
+          foreach ($info['widget types'] as $widget_type => $widget) {
+            if (in_array($meta_info['field_type'], $widget['field types']) && !in_array($widget_type, $meta_info['not_supported_widgets'])) {
+              $widgets[$widget_type] = $widget;
+            }
+          }
 
-/**
- * Obtain display modes for MVF fields containing single value.
- */
-function mvf_get_display_modes_single() {
-  return array(
-    's|f' => t('Symbol + Value'),
-    's|+|f' => t('Symbol + Space + Value'),
-    'f|s' => t('Value + Symbol'),
-    'f|+|s' => t('Value + Space + Symbol'),
-    's|f|+|u' => t('Symbol + Value + Space + Unit Short Name'),
-    's|+|f|+|u' => t('Symbol + Space + Value + Space + Unit Short Name'),
-    'f|+|u' => t('Value + Space + Unit Short Name'),
-    'u|+|f' => t('Unit Short Name + Space + Value'),
-    'u|+|f|s' => t('Unit Short Name + Space + Value + Symbol'),
-    'u|+|f|+|s' => t('Unit Short Name + Space + Value + Space + Symbol'),
-  );
-}
+          $options = array();
+          foreach ($widgets as $widget_type => $widget) {
+            $options[$widget_type] = $widget['label'];
+          }
 
-/**
- * Obtain display modes for MVF fields containing range of values.
- */
-function mvf_get_display_modes_range() {
-  return array(
-    's|f|-|t' => t('Symbol + "From" value + Space + Hyphen + Space + "To" value'),
-    's|+|f|-|t' => t('Symbol + Space + "From" value + Space + Hyphen + Space + "To" value'),
-    'f|-|t|s' => t('"From" value + Space + Hyphen + Space + "To" value + Symbol'),
-    'f|-|t|+|s' => t('"From" value + Space + Hyphen + Space + "To" value + Space + Symbol'),
-    's|f|-|t|+|u' => t('Symbol + "From" value + Space + Hyphen + Space + "To" value + Space + Unit Short Name'),
-    's|+|f|-|t|+|u' => t('Symbol + Space + "From" value + Space + Hyphen + Space + "To" value + Space + Unit Short Name'),
-    'f|-|t|+|u' => t('"From" value + Space + Hyphen + Space + "To" value + Space + Unit Short Name'),
-    'u|+|f|-|t' => t('Unit Short Name + Space + "From" value + Space + Hyphen + Space + "To" value'),
-    'u|+|f|-|t|s' => t('Unit Short Name + Space + "From" value + Space + Hyphen + Space + "To" value + Symbol'),
-    'u|+|f|-|t|+|s' => t('Unit Short Name + Space + "From" value + Space + Hyphen + Space + "To" value + Space + Symbol'),
-  );
-}
+          $form['meta_info'][$subfield] = array();
 
-/**
- * Implementation of hook_widget().
- */
-function mvf_widget(&$form, &$form_state, $field, $items, $delta = 0) {
-  return array(
-    '#type' => $field['widget']['type'],
-    '#default_value' => (isset($items[$delta]) ? $items[$delta] : NULL),
-  );
-}
+          $form['meta_info'][$subfield]['widget'] = array(
+            '#type' => 'select',
+            '#title' => t('@label Widget', array('@label' => $meta_info['label'])),
+            '#description' => t('Please, choose the widget for @label part of the field', array('@label' => $meta_info['label'])),
+            '#required' => TRUE,
+            '#options' => $options,
+            '#default_value' => $meta_info['widget'],
+          );
 
-/**
- * Implementation of FAPI hook_elements().
- */
-function mvf_elements() {
-  return array(
-    'mvf_widget' => array(
-      '#input' => TRUE,
-      '#columns' => array('value', 'value2', 'unit'),
-      '#delta' => 0,
-      '#process' => array('mvf_widget_process'),
-      '#element_validate' => array('mvf_widget_validate'),
-    ),
-  );
-}
-
-/**
- * Process an individual MVF element.
- */
-function mvf_widget_process($element, $edit, $form_state, $form) {
-  $field_name = $element['#field_name'];
-  $field = $form['#field_info'][$field_name];
-  $from_field = 'value';
-  $to_field = 'value2';
-  $unit_field = 'unit';
-  
-  $field_precision = (isset($field['precision']) && (int)$field['precision'] > 0 ? (int)$field['precision'] : 12);
-  $field_decimals = (isset($field['decimals']) && (int)$field['decimals'] >= 0 ? (int)$field['decimals'] : 0);
-  $field_min = (isset($field['min']) ? parse_formatted_number($field['min']) : NULL);
-  if (!is_numeric($field_min)) {
-    $field_min = formatted_number_get_number_limit($field['type'], 'min', $field_precision, $field_decimals);
-  }
-
-  // Compute maxlength for the input textfield.
-  $field_maxlength = $field_precision;
-  $extra_length = 0;
-  if ($field_decimals > 0) {
-    $extra_length++;
-  }
-  if (isset($field_min) && $field_min < 0) {
-    $extra_length++;
-  }
-  $thousands_sep = format_number_get_options('thousands_sep');
-  if (!empty($thousands_sep)) {
-    $extra_length += ceil($field_precision / 3);
-  }
-  
-  $description =  !empty($field['widget']['description']) ? t($field['widget']['description']) : '';
-
-  if ($field['tovalue'] != 'required' && !empty($element['#default_value'][$to_field]) && $element['#default_value'][$to_field] == $element['#default_value'][$from_field]) {
-    unset($element['#default_value'][$to_field]);
-  }
-  
-  // Reuse formatted number element for "From" value.
-  $element = formatted_number_widget_process($element, $edit, $form_state, $form);
-  // Do not use title/description of the formatted number element.
-  unset($element[$from_field]['#title'], $element[$from_field]['#description']);
-  // Remove Format Number validation sub-element, because we don't need it.
-  unset($element['_error_element']);
-  
-  // If this field uses the 'To' value, add matching element
-  // for it.
-  if (!empty($field['tovalue'])) {    
-    $element[$to_field] = $element[$from_field];
-    // Format the default values.
-    $default_value2 = (isset($element['#value'][$to_field]) ? $element['#value'][$to_field] : '');
-    if (is_numeric($default_value2)) {
-      $default_value2 = format_number($default_value2, $field_decimals);
+          // Adding another hidden info.
+          foreach ($meta_info as $k => $v) {
+            if (!in_array($k, array('widget'))) {
+              $form['meta_info'][$subfield][$k] = array(
+                '#type' => 'value',
+                '#value' => $v,
+              );
+            }
+          }
+        }
+        break;
     }
-    // Empty "To" value is stored as equal to the "From" value. 
-    // We hide it and present empty field like it's really empty.
-    $element[$to_field]['#default_value'] = ($element[$from_field]['#default_value'] == $default_value2) ? '' : $default_value2;
-    // "To" value requirement check depends on field setting.
-    $element[$to_field]['#required'] = ($element['#required'] && $field['tovalue'] == 'required');
-    // Adapt titles to make it clear which is the "From" and which
-    // is the "To" 
-    $element[$from_field]['#title'] = t('From');
-    $element[$to_field]['#title'] = t('To');
-    $element['#fieldset_description'] = $description;
   }
-  else {
-    $element[$from_field]['#description'] = $description;
+  return $form;
+}
+
+/**
+ * Supportive validation function.
+ *
+ * In fact function does not validate anything, however, it hooks into the
+ * logic of entityreference module and makes it work as a subfield for MVF.
+ */
+function mvf_entityreference_field_settings_validate($form, &$form_state) {
+  // Entityreference module holds here field array definition. Since in our
+  // case it's just a sub field, we have to pass it through mocking up
+  // sub field function.
+  $form_state['entityreference']['field'] = mvf_field_mockup($form_state['entityreference']['field'], 'unit');
+  unset($form_state['values']['field']['settings']['unit']['handler_submit']);
+}
+
+/**
+ * Implements hook_field_load().
+ */
+function mvf_field_load($entity_type, $entities, $field, $instances, $langcode, &$items) {
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instances = array();
+    foreach ($instances as $k => $v) {
+      $mocked_instances[$k] = mvf_instance_mockup($field, $v, $subfield);
+    }
+    $function = $mocked_field['module'] . '_field_load';
+    if (function_exists($function)) {
+      $function($entity_type, $entities, $mocked_field, $mocked_instances, $langcode, $items);
+    }
+  }
+}
+
+/**
+ * Implements hook_field_validate().
+ */
+function mvf_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+
+    $function = $mocked_field['module'] . '_field_validate';
+    if (function_exists($function)) {
+      $function($entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $items, $errors);
+    }
+  }
+}
+
+/**
+ * Implements hook_field_presave().
+ */
+function mvf_field_presave($entity_type, $entity, $field, $instance, $langcode, &$items) {
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+    $function = $mocked_field['module'] . '_field_presave';
+    if (function_exists($function)) {
+      $function($entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $items);
+    }
+  }
+}
+
+/**
+ * Implements hook_field_insert().
+ */
+function mvf_field_insert($entity_type, $entity, $field, $instance, $langcode, &$items) {
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+    $function = $mocked_field['module'] . '_field_insert';
+    if (function_exists($function)) {
+      $function($entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $items);
+    }
+  }
+}
+
+/**
+ * Implements hook_field_update().
+ */
+function mvf_field_update($entity_type, $entity, $field, $instance, $langcode, &$items) {
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+    $function = $mocked_field['module'] . '_field_update';
+    if (function_exists($function)) {
+      $function($entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $items);
+    }
+  }
+}
+
+/**
+ * Implements hook_field_delete().
+ */
+function mvf_field_delete($entity_type, $entity, $field, $instance, $langcode, &$items) {
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+    $function = $mocked_field['module'] . '_field_delete';
+    if (function_exists($function)) {
+      $function($entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $items);
+    }
+  }
+}
+
+/**
+ * Implements hook_field_instance_settings_form().
+ */
+function mvf_field_instance_settings_form($field, $instance) {
+  $form = array();
+
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+
+    // Checking if the module that defines a subfield wants to define any
+    // instance settings.
+    $extra = module_invoke($meta_info['module'], 'field_instance_settings_form', $mocked_field, $mocked_instance);
+    if (is_array($extra) && !empty($extra)) {
+      // Doing any customizations in the output of a sub field hook.
+      switch ($subfield) {
+        case 'unit':
+          // We have to add our custom validate function that will "repair"
+          // what brakes entity reference native validate function.
+          $extra['#element_validate'][] = 'mvf_entityreference_field_instance_settings_validate';
+          // We have to "save" original field definition array for
+          // our submit validation function.
+          $extra['#mvf'] = array(
+            'field' => $field,
+          );
+          break;
+
+        case 'value':
+          // Number module native 'min' and 'max' doesn't make sense in MVF,
+          // because min and max should be defined considering unit measure, and
+          // not only value.
+          $extra['min']['#access'] = FALSE;
+          $extra['max']['#access'] = FALSE;
+          break;
+      }
+      $form[$subfield] = array(
+        '#type' => 'fieldset',
+        '#title' => t('@label Instance Settings', array('@label' => $meta_info['label'])),
+        '#collapsible' => TRUE,
+      ) + $extra;
+    }
+  }
+  return $form;
+}
+
+/**
+ * Supportive validation function.
+ *
+ * In fact function does not validate anything, however, it hooks into the
+ * logic of entityreference module and makes it work as a subfield for MVF.
+ */
+function mvf_entityreference_field_instance_settings_validate($form, &$form_state) {
+  // Entityreference module holds here instance array definition. Since in our
+  // case it's just a sub field, we have to pass it through mocking up
+  // sub field function.
+  $field = $form['#mvf']['field'];
+  $instance = $form_state['entityreference']['instance'];
+  $form_state['entityreference']['instance'] = mvf_instance_mockup($field, $instance, 'unit');
+}
+
+/**
+ * Implements hook_field_widget_settings_form().
+ */
+function mvf_field_widget_settings_form($field, $instance) {
+  $form = array();
+
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+    // Checking if the module that defines a subfield wants to define any
+    // settings.
+    $extra = module_invoke($mocked_instance['widget']['module'], 'field_widget_settings_form', $mocked_field, $mocked_instance);
+    if (is_array($extra) && !empty($extra)) {
+      // Doing any customizations before inserting output of the module that
+      // defines a sub field into our widget settings form.
+      switch ($subfield) {
+        case 'value':
+          break;
+
+        case 'unit':
+          break;
+      }
+
+      $form[$subfield] = array(
+        '#type' => 'fieldset',
+        '#title' => t('@label Widget Settings', array('@label' => $meta_info['label'])),
+        '#collapsible' => TRUE,
+      ) + $extra;
+    }
   }
 
-  // Unit uses a select list element.
-  $element[$unit_field] = array(
+  $form['meta_info'] = array(
+    '#theme' => 'mvf_column_order',
+  );
+
+  // Sort by weight the columns.
+  uasort($instance['widget']['settings']['meta_info'], 'drupal_sort_weight');
+
+  foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
+    $form['meta_info'][$subfield]['column'] = array(
+      '#markup' => $field['settings']['meta_info'][$subfield]['label'],
+    );
+    $form['meta_info'][$subfield]['weight'] = array(
+      '#type' => 'weight',
+      '#title' => t('Weight'),
+      '#title_display' => 'invisible',
+      '#default_value' => isset($instance['widget']['settings']['meta_info'][$subfield]['weight']) ? $instance['widget']['settings']['meta_info'][$subfield]['weight'] : 0,
+    );
+  }
+  return $form;
+}
+
+/**
+ * Implements hook_field_widget_form().
+ */
+function mvf_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+  // Array maps subfield name to its column name under which it should
+  // appear in widget and in $items array.
+  $column_map = array(
+    'value' => 'value',
+    'unit' => 'target_id',
+  );
+
+  $form_fields = array();
+  uasort($instance['widget']['settings']['meta_info'], 'drupal_sort_weight');
+  foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
+    $meta_info = $field['settings']['meta_info'][$subfield];
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+
+    // We have to extra process $mocked_field in order to make it work with
+    // options module. It gets default value based on looking into the key
+    // of first element in $field['columns'] array. Thus we have to make the
+    // current subfield column first in columns array.
+    $column = array($column_map[$subfield] => $mocked_field['columns'][$column_map[$subfield]]);
+    $mocked_field['columns'] = $column + $mocked_field['columns'];
+
+    $function = $mocked_instance['widget']['module'] . '_field_widget_form';
+    $extra = FALSE;
+    if (function_exists($function)) {
+      // Since we mock sub fields as if the cardinality is 1 (we handle
+      // real cardinality in our own field), we have to mock $items array
+      // to represent "truth" for the subfield, i.e. $items array should
+      // only include the current item and nothing else, this way we are able
+      // to mock the cardinality 1 for our sub fields.
+      $mocked_items = isset($items[$delta]) ? array($items[$delta]) : array();
+
+      $extra = $function($form, $form_state, $mocked_field, $mocked_instance, $langcode, $mocked_items, 0, $element);
+    }
+    if (is_array($extra) && !empty($extra)) {
+      $extra = isset($extra[$subfield]) ? $extra[$subfield] : $extra;
+      unset($extra['#description']);
+      $extra['#title'] = isset($extra['#title']) ? $extra['#title'] . ' ' . $meta_info['label'] : $meta_info['label'];
+      $extra['#title_display'] = 'invisible';
+      // Doing any sub field specific customizations of subfield output.
+      switch ($subfield) {
+        case 'unit':
+          if ($mocked_instance['widget']['module'] == 'options') {
+            // Options module messes things up for us in its element validate
+            // function. So we have to clean things up in our own element validate
+            // function that will be run after the options' one.
+            $extra['#element_validate'][] = 'mvf_field_widget_unit_options_validate';
+          }
+          break;
+
+        case 'value':
+          // Number module uses FAPI element validate function
+          // number_field_widget_validate() for validating user input. That
+          // function retrieves info about field and instance from $form_state.
+          // Apparantly in our case things go bad, because it retrieves info
+          // about MVF field, instead of expected number sub field. We have to
+          // to override $form_state before that validation function and then
+          // return $form_state back to how it was after running Number's module
+          // validation function.
+          array_unshift($extra['#element_validate'], 'mvf_field_widget_validate_value_form_state_mockup_override');
+          $extra['#element_validate'][] = 'mvf_field_widget_validate_value_form_state_mockup_revert';
+          break;
+      }
+
+      $form_fields[$column_map[$subfield]] = $extra;
+    }
+  }
+  $element += $form_fields;
+  $element += array(
+    '#type' => 'item',
+    '#title' => $instance['label'],
+  );
+  return $element;
+}
+
+/**
+ * Implements hook_field_formatter_settings_form().
+ */
+function mvf_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  $element = array();
+
+  // We are able to do configurable formatters in 2 steps. In the 1st step
+  // user chooses sub formatters and in the 2nd step user defines any settings
+  // for the chosen sub formatters.
+
+  $info = _field_info_collate_types();
+  $superior_formatter = $instance['display'][$view_mode];
+
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    // Looking for formatters that support our sub field type.
+    $formatters = array();
+    foreach ($info['formatter types'] as $formatter_type => $formatter) {
+      if (in_array($meta_info['field_type'], $formatter['field types'])) {
+        $formatters[$formatter_type] = $formatter;
+      }
+    }
+
+    $fieldset_id = 'mvf-formatter-' . $subfield;
+    $element[$subfield] = array(
+      '#type' => 'fieldset',
+      '#title' => $meta_info['label'],
+      '#collapsible' => TRUE,
+      '#prefix' => '<div id="' . $fieldset_id . '">',
+      '#suffix' => '</div>',
+    );
+
+    $options = array();
+    foreach ($formatters as $formatter_type => $formatter) {
+      $options[$formatter_type] = $formatter['label'];
+    }
+    // Since we update values via #ajax, the chosen value in $superior_formatter
+    // can be overriden in $form_state by the current unsaved (yet) value.
+    $formatter = FALSE;
+    if (isset($form_state['values']['fields'][$field['field_name']]['settings_edit_form']['settings'][$subfield]['formatter'])) {
+      $formatter = $form_state['values']['fields'][$field['field_name']]['settings_edit_form']['settings'][$subfield]['formatter'];
+    }
+    elseif (isset($superior_formatter['settings'][$subfield]['formatter'])) {
+      // Then we check superior formatter to see if there are any stored
+      // settings there.
+      $formatter = $superior_formatter['settings'][$subfield]['formatter'];
+    }
+    else {
+      // If we end up here, it's the 1st time formatter settings form is opened,
+      // since there is no stored settings in superior formatter. So lastly we
+      // fallback on sub field default formatter.
+      $formatter = $meta_info['formatter'];
+    }
+    // After we have let current $form_state values to override currently saved
+    // formatter for the subfield, we are now able to mock $field and $instance
+    // so that in the mocked results the overriden formatter will be reflected.
+    $instance['display'][$view_mode]['settings'][$subfield]['formatter'] = $formatter;
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+
+    $element[$subfield]['formatter'] = array(
+      '#type' => 'select',
+      '#title' => t('Formatter'),
+      '#required' => TRUE,
+      '#description' => t('Please, choose formatter for the sub field.'),
+      '#options' => $options,
+      '#default_value' => $formatter,
+      '#ajax' => array(
+        'path' => 'mvf/ajax/formatter/' . $instance['entity_type'] . '/' . $instance['bundle'] . '/' . $field['field_name'] . '/' . $subfield,
+        'wrapper' => $fieldset_id,
+        'event' => 'change',
+        'effect' => 'fade',
+      ),
+    );
+
+    if (isset($formatters[$formatter])) {
+      $formatter = $formatters[$formatter];
+      // Since the sub formatter has been chosen, now we can check whether
+      // the module that defines sub formatter desires to define some settings
+      // for its sub formatter too.
+      $function = $formatter['module'] . '_field_formatter_settings_form';
+      $extra = NULL;
+      if (function_exists($function)) {
+        $extra = $function($mocked_field, $mocked_instance, $view_mode, $form, $form_state);
+      }
+      if (is_array($extra)) {
+        // Doing any customizations after collecting data from the module that
+        // defines a sub formatter.
+        switch ($subfield) {
+          case 'value':
+            if ($field['settings']['meta_info'][$subfield]['field_type'] == 'number_integer') {
+              // For integer we have to define 'scale' and 'decimal_separator'
+              // because number module keeps these 2 parameters behind the
+              // scenes for integer (since they don't make sense to integer) in
+              // order to use the same formatter for all numbers.
+              $extra['scale'] = array(
+                '#type' => 'value',
+                '#value' => $formatter['settings']['scale'],
+              );
+              $extra['decimal_separator'] = array(
+                '#type' => 'value',
+                '#value' => $formatter['settings']['decimal_separator'],
+              );
+            }
+            break;
+        }
+        $element[$subfield] += $extra;
+      }
+    }
+  }
+
+  // Defining our own field formatting settings.
+  $element['mvf'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Measured Value Field'),
+    '#collapsible' => TRUE,
+  );
+
+  $options = array();
+  $query = new EntityFieldQuery();
+  $result = $query->entityCondition('entity_type', 'units_unit')
+      ->entityCondition('bundle', array_pop($field['settings']['unit']['handler_settings']['target_bundles']))
+      ->execute();
+  if (isset($result['units_unit']) && !empty($result['units_unit'])) {
+    $ids = array();
+    foreach ($result['units_unit'] as $v) {
+      $ids[] = $v->umid;
+    }
+    foreach (entity_load('units_unit', $ids) as $unit) {
+      $options[$unit->machine_name] = entity_label('units_unit', $unit);
+    }
+  }
+  asort($options);
+  $options = array(MVF_FORMATTER_ORIGINAL_UNIT => t('Units in which value was entered')) + $options;
+
+  $element['mvf']['formatter_units_unit'] = array(
     '#type' => 'select',
-    '#default_value' => (isset($element['#value'][$unit_field]) ? $element['#value'][$unit_field] : array()),
-    '#options' => mvf_get_widget_units($field),
-    // The following values were set by the content module and need
-    // to be passed down to the nested element.
-    '#required' => $element['#required'],
-    '#field_name' => $element['#field_name'],
-    '#type_name' => $element['#type_name'],
-    '#delta' => $element['#delta'],
-    '#columns' => $element['#columns'],
+    '#title' => t('Output Unit Measure'),
+    '#description' => t('Please, choose in what unit measure you want to output the entered value for this field.'),
+    '#options' => $options,
+    '#required' => TRUE,
+    '#default_value' => $instance['display'][$view_mode]['settings']['mvf']['formatter_units_unit'],
   );
 
   return $element;
 }
 
 /**
- * Validate a single value (row) of measured value field and indicate errors.
- *
- * Validates the unit and relation between the values and the unit.
- * Individual numeric values are validated on widget level because widget
- * provides specific number format.
- * 
- * @param array $field
- *   The field array.
- * @param array $delta
- *   The field row delta in field array.
- * @param number $item
- *   Array containing field row to validate
- *
+ * Implements hook_field_formatter_settings_summary().
  */
-function mvf_validate_field_value($field, $delta, $item) {
-  $value = $item['value'];
-  $value2 = $item['value2'];
-  $unit = $item['unit'];
-  $widget_label = t($field['widget']['label']);
-  $errors = array();
-  $errors['unit'] = array();
-  $errors['value'] = array();
-  $errors['value2'] = array();
-  
-  // Validate values relationship.
-  if ($field['tovalue']) {
-    // "To" should be greater than "From".    
-    if (is_numeric($value2) && is_numeric($value) && $value2 <= $value) {
-      $errors['value2'][] = t('%name: the "To" value must be greater than the "From" value.', array('%name' => $widget_label));
+function mvf_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $summary = array();
+
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+    $formatter = $mocked_instance['display'][$view_mode];
+    $tmp = module_invoke($formatter['module'], 'field_formatter_settings_summary', $mocked_field, $mocked_instance, $view_mode);
+    if ($tmp) {
+      $summary[$subfield] = $tmp;
     }
-    // If the "To" value is filled in, the "From" one should be filled in too.
-    if (is_numeric($value2) && !is_numeric($value)) {
-      $errors['value'][] = t('%name: the "From" value must be filled in.', array('%name' => $widget_label));
-    }
-    // If the "From" value is filled in, "To" one should be too, if it's required.
-    // We need this check to validate additional (optional) rows in case of multiple values MVF.
-    if (is_numeric($value) && !is_numeric($value2) && $field['tovalue'] == 'required') {
-      $errors['value2'][] = t('%name: the "To" value must be filled in.', array('%name' => $widget_label));
-    }
-    
   }
 
-  // Validate units
-  if (empty($unit)) {
-    if ($field['required']) {
-      $errors['unit'][] = t('%name: unit is required.', array('%name' => $widget_label));
-    }
-    else if (is_numeric($value) || is_numeric($value2)) {
-      $errors['unit'][] = t('%name: unit is required when an value is specified.', array('%name' => $widget_label));
+  // Providing our own summary.
+  $output_unit = $instance['display'][$view_mode]['settings']['mvf']['formatter_units_unit'];
+  switch ($output_unit) {
+    case MVF_FORMATTER_ORIGINAL_UNIT:
+      $summary[] = t('Original units');
+      break;
+
+    default:
+      $query = new EntityFieldQuery();
+      $result = $query->entityCondition('entity_type', 'units_unit')
+          ->propertyCondition('machine_name', $output_unit)
+          ->execute();
+      if (isset($result['units_unit']) && count($result['units_unit']) == 1) {
+        $result = array_pop($result['units_unit']);
+        $unit = entity_load_single('units_unit', $result->umid);
+        $summary[] = t('Output unit %unit', array('%unit' => entity_label('units_unit', $unit)));
+      }
+      else {
+        drupal_set_message(t('Unexpected output unit measure is found: %unit.', array('%unit' => $output_unit)), 'error');
+        watchdog('mvf', t('Unexpected output unit measure is found: %unit.', array('%unit' => $output_unit)), WATCHDOG_ERROR);
+      }
+      break;
+  }
+  $summary = implode('; ', $summary);
+  if (empty($summary)) {
+    // We have to output at least some string in order to make the "settings"
+    // button for format to appear.
+    $summary = 'no format';
+  }
+
+  return $summary;
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ */
+function mvf_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $element = array();
+
+  // Before we proceed we have to convert value and substitute untis in $items
+  // according to what our formatter is set up to.
+  $items = mvf_items_convert($field, $items, $display['settings']['mvf']['formatter_units_unit']);
+
+  // In order to successfully mock up instance for a sub field, we have to know
+  // view mode that corresponds to the supplied $display. We could compare each
+  // display in $instance trying to find the one that equals to $display.
+  // It seems easier just to extend $instance['display'] with $display
+  // and then catch it out in $mocked_instance
+  $mocked_view_mode = 'mvf_dummy_view_mode';
+  $instance['display'][$mocked_view_mode] = $display;
+
+  // Sort by weight the subfields.
+  uasort($instance['widget']['settings']['meta_info'], 'drupal_sort_weight');
+
+  foreach ($items as $delta => $item) {
+    $element[$delta] = array();
+    foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
+      $mocked_field = mvf_field_mockup($field, $subfield);
+      $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+      $mocked_display = $mocked_instance['display'][$mocked_view_mode];
+      unset($mocked_instance['display'][$mocked_view_mode]);
+      $mocked_delta = 0;
+      $mocked_items = array($mocked_delta => $item);
+
+      $extra = module_invoke($mocked_display['module'], 'field_formatter_view', $entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $mocked_items, $mocked_display);
+      if (is_array($extra)) {
+        // Wrapping subfield in a separate <div> for easy theming.
+        $extra += array(
+          '#prefix' => '<div class="subfield ' . $subfield . '">',
+          '#suffix' => '</div>',
+        );
+        $element[$delta][$subfield] = $extra;
+      }
     }
   }
-  else {
-    // When validating the default value in field settings panel, CCK is giving
-    // us the options at field level, not within the widget item of the field.
-    if (!empty($field['allowed_units'])) {
-      $allowed_units = (isset($field['allowed_units']) ? array_filter($field['allowed_units']) : array());
-      $value_required = FALSE;
+  return $element;
+}
+
+/**
+ * Implements hook_field_formatter_prepare_view().
+ */
+function mvf_field_formatter_prepare_view($entity_type, $entities, $field, $instances, $langcode, &$items, $displays) {
+  $mocked_view_mode = 'mvf_mocked_view_mode';
+
+  // Before we proceed we have to convert value and substitute untis in $items
+  // according to what our formatter is set up to.
+  foreach ($entities as $entity_id => $entity) {
+    $items[$entity_id] = mvf_items_convert($field, $items[$entity_id], $displays[$entity_id]['settings']['mvf']['formatter_units_unit']);
+  }
+
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    foreach ($instances as $k => $v) {
+      $mocked_instances = array($k => array());
+      $mocked_displays = array($k => array());
+
+      $v['display'][$mocked_view_mode] = $displays[$k];
+      $mocked_instances[$k] = mvf_instance_mockup($field, $v, $subfield);
+      $displays[$k] = $mocked_instances[$k]['display'][$mocked_view_mode];
+      unset($mocked_instances[$k]['display'][$mocked_view_mode]);
+
+      $function = $displays[$k]['module'] . '_field_formatter_prepare_view';
+      if (function_exists($function)) {
+        $function($entity_type, $entities, $mocked_field, $mocked_instances, $langcode, $items, $mocked_displays);
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_field_is_empty().
+ */
+function mvf_field_is_empty($item, $field) {
+  $is_empty = FALSE;
+
+  // If at least one sub field is empty, the entire field is considered empty.
+  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $is_empty = $is_empty || (bool) module_invoke($mocked_field['module'], 'field_is_empty', $item, $mocked_field);
+  }
+
+  return $is_empty;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function mvf_theme() {
+  return array(
+    'mvf_column_order' => array(
+      'render element' => 'element',
+    ),
+  );
+}
+
+/**
+ * Supportive function.
+ *
+ * Mocks up field array of a subfield of the supplied $field array based on the
+ *   parameter $subfield.
+ *
+ * @param array $field
+ *   Field the includes sub fields one of which needs to be mocked up
+ * @param string $subfield
+ *   Subfield name for which the sub field array should be mocked up
+ *
+ * @return array
+ *   Array of mocked up subfield
+ */
+function mvf_field_mockup($field, $subfield) {
+  $mocked_field = array(
+    'field_name' => $field['field_name'],
+    'translatable' => $field['translatable'],
+    'entity_types' => $field['entity_types'],
+    'type' => $field['settings']['meta_info'][$subfield]['field_type'],
+    'module' => $field['settings']['meta_info'][$subfield]['module'],
+    'active' => $field['active'],
+    'locked' => $field['locked'],
+    // For subfields the cardinality is always 1, we handle cardinality in the
+    // real field.
+    'cardinality' => 1,
+    'deleted' => $field['deleted'],
+    'settings' => isset($field['settings'][$subfield]) ? $field['settings'][$subfield] : array(),
+  );
+  if (isset($field['columns'])) {
+    $mocked_field['columns'] = $field['columns'];
+  }
+  if (isset($field['bundles'])) {
+    $mocked_field['bundles'] = $field['bundles'];
+  }
+/*
+  // Applying any special exceptions.
+  switch ($subfield) {
+    case 'value':
+      break;
+
+    case 'unit':
+      if (!isset($mocked_field['settings']['handler_settings'])) {
+        // Entity reference module throws fatal errors if this array is not
+        // initialized.
+        //$mocked_field['settings']['handler_settings'] = array();
+      }
+      break;
+  }
+*/
+  return $mocked_field;
+}
+
+/**
+ * Supportive function.
+ *
+ * Mocks up instance array of a subfield instance of the supplied $instance
+ *   array based on the parameter $subfield.
+ *
+ * @param array $field
+ *   Field array. It is used to extract info and mock up the instance array
+ * @param array $instance
+ *   Instane array. It is used to extract info and mock up the instance array
+ * @param string $subfield
+ *   Subfield name for which the sub field instance should be mocked up
+ *
+ * @return array
+ *   Array of mocked up subfield instance
+ */
+function mvf_instance_mockup($field, $instance, $subfield) {
+  // We need to figure out what module supplies the widget selected for this
+  // instance.
+  $info = _field_info_collate_types();
+  $widget = $info['widget types'][$field['settings']['meta_info'][$subfield]['widget']];
+  $mocked_instance = array(
+    'label' => $instance['label'],
+    'widget' => array(
+      'type' => $field['settings']['meta_info'][$subfield]['widget'],
+      'weight' => $instance['widget']['weight'],
+      'settings' => isset($instance['widget']['settings'][$subfield]) ? $instance['widget']['settings'][$subfield] : $widget['settings'],
+      'module' => $widget['module'],
+    ),
+    'settings' => isset($instance['settings'][$subfield]) ? $instance['settings'][$subfield] : array(),
+    // Display will be defined later on.
+    'display' => array(),
+    'required' => $instance['required'],
+    'description' => $instance['description'],
+    'entity_type' => $instance['entity_type'],
+    'bundle' => $instance['bundle'],
+  );
+  if (isset($instance['deleted'])) {
+    $mocked_instance['deleted'] = $instance['deleted'];
+  }
+
+  if (isset($instance['display']) && is_array($instance['display'])) {
+    foreach ($instance['display'] as $view_mode => $display) {
+      $formatter_type = isset($display['settings'][$subfield]['formatter']) ? $display['settings'][$subfield]['formatter'] : $field['settings']['meta_info'][$subfield]['formatter'];
+      $formatter = $info['formatter types'][$formatter_type];
+      unset($display['settings'][$subfield]['formatter']);
+      $mocked_instance['display'][$view_mode] = array(
+        'label' => $display['label'],
+        'type' => $formatter_type,
+        'settings' => isset($display['settings'][$subfield]) && !empty($display['settings'][$subfield]) ? $display['settings'][$subfield] : $formatter['settings'],
+        'module' => $formatter['module'],
+        'weight' => $display['weight'],
+      );
+    }
+  }
+  return $mocked_instance;
+}
+
+/**
+ * Supportive function, normally should be used in formatters of MVF field.
+ *
+ * Convert $items array of MVF field instance from the original unit measures
+ * into $destination_unit
+ *
+ * @param array $field
+ *   Field definition array of MVF field $items of which are supplied for
+ *   convertion
+ * @param array $items
+ *   $items array of MVF field instance
+ * @param object|string|int $destination_unit
+ *   Into what unit measure $items should be converted to. You may supply a
+ *   fully loaded entity 'units_unit', or string, which will be considered to be
+ *   machine name of destination unit, or int, which will be considered to be
+ *   umid of destination unit
+ *
+ * @return array
+ *   Converted $items array
+ */
+function mvf_items_convert($field, $items, $destination_unit) {
+  if (!is_object($destination_unit)) {
+    if (is_numeric($destination_unit)) {
+      $destination_unit = entity_load_single('units_unit', $destination_unit);
     }
     else {
-      $allowed_units = (isset($field['widget']['allowed_units']) ? array_filter($field['widget']['allowed_units']) : array());
-      $value_required = TRUE;
-    }
-    // When no unit is enabled, allow them all.
-    if (empty($allowed_units)) {
-      $allowed_units = units_get_unit_names();
-    }
-    if (!isset($allowed_units[$unit])) {
-      if (!$field['required']) {
-        $errors['unit'][] = t('%name: the unit %unit is not allowed.', array('%name' => $widget_label, '%unit' => $unit));
+      $query = new EntityFieldQuery();
+      $result = $query->entityCondition('entity_type', 'units_unit')
+          ->entityCondition('bundle', array_pop($field['settings']['unit']['handler_settings']['target_bundles']))
+          ->propertyCondition('machine_name', $destination_unit)
+          ->execute();
+      if (!isset($result['units_unit']) || count($result['units_unit']) != 1) {
+        // We couldn't find units_unit entity for destination units. As fallback
+        // we return untouched $items array.
+        return $items;
       }
-    }
-    else if (!is_numeric($value) && $value_required) {
-      $errors[] = t('%name: a valid value is required when a unit is specified.', array('%name' => $widget_label));
-    }
-  }
-  
-  $error_field = $field['field_name'] .']['. $delta .'][';
-  foreach ($errors as $label => $error_messages) {
-    if (is_array($error_messages)) {
-      foreach ($error_messages as $message) {
-        $error_element = $error_field . $label;
-        form_set_error($error_element, $message);
-      }
+      $result = array_pop($result['units_unit']);
+      $destination_unit = entity_load_single('units_unit', $result->umid);
     }
   }
+
+  if (!is_object($destination_unit)) {
+    // We couldn't find units_unit entity for destination units. As fallback
+    // we return untouched $items array.
+    return $items;
+  }
+
+  // For scaling we load all origin units at once.
+  $origin_units = array();
+  foreach ($items as $item) {
+    $origin_units[$item['target_id']] = $item['target_id'];
+  }
+  $origin_units = array_keys($origin_units);
+  $origin_units = entity_load('units_unit', $origin_units);
+
+  foreach ($items as $delta => $item) {
+    $items[$delta]['value'] = units_convert($item['value'], $origin_units[$item['target_id']]->machine_name, $destination_unit->machine_name);
+    $items[$delta]['target_id'] = $destination_unit->umid;
+  }
+
+  return $items;
 }
 
 /**
- * FAPI validation of an individual Measured Value field.
- * 
- * Validate "To" value only. "From" value is validated by Formatted Number validation
- * function, because we reuse it's element.   
- */
-function mvf_widget_validate($element, &$form_state) {
-  $field_name = $element['#field_name'];
-  $type_name = $element['#type_name'];
-  $field = content_fields($field_name, $type_name);
-  // When "To" value is disabled there's nothing to validate.
-  if (empty($field['tovalue'])) {
-    return;
-  } 
-  $to_field = 'value2';
-  $unit_field = 'unit';
-  $value2 = trim($element['#value'][$to_field]);
-  
-  // Validate "To" value.
-  if ($element[$field_key]['#required'] || $value2 != '') {
-    $value2 = parse_formatted_number($value2, $element[$field_key]['#required']);
-    if (!is_numeric($value2)) {
-      $error_element = implode('][', $element['#parents']) .']['. $to_field;
-      form_set_error($error_element, t('The specified number !num is invalid.', array('!num' => $element['#value'][$to_field])));
-      return;
-    }
-    $errors = formatted_number_validate_field_value($field, $value2);
-
-    if (!empty($errors)) {
-      $error_element = implode('][', $element['#parents']) .']['. $to_field;
-      foreach ($errors as $message) {
-        form_set_error($error_element, $message);
-      }
-      return;
-    }
-  } 
-
-  // Update the form field with parsed number, so it gets a valid PHP number
-  // that can be used to store in the database.
-  if ($element['#value'][$to_field] != $value2) {
-    form_set_value($element[$to_field], $value2, $form_state);
-  }
-}
-
-/**
- * Build unit options for the given field/widget.
- */
-function mvf_get_widget_units($field) {
-  // Currently implemented modes: short, full. See mvf_widget_settings().
-  $mode = $field['widget']['unit_select_mode'];
-
-  // Prepare the array of allowed units.
-  if (isset($field['widget']['allowed_units']) && is_array($field['widget']['allowed_units'])) {
-    // Obtain the list of allowed units. Note that this array is in the form of 'unit_id' => boolean.
-    $allowed_units = array_filter($field['widget']['allowed_units']);
-  }
-  else {
-    // Initialize array when the list has not been already set in field settings.
-    $allowed_units = array();
-  }
-
-  // Depending on mode, unit array is built in the form "id" => "shortname",
-  // or "id" => "fullname".
-  switch ($mode) {
-    case 'full':
-      $site_units = units_get_unit_names(1);
-      break;
-    // Default is 'short' mode.
-    default:
-      $site_units = units_get_unit_names();
-  }
-  
-  // Reduce units array to globally enabled units.
-  // Units get enabled or disabled at Units module UI ("admin/content/units").
-  // Empty list of enabled units returned means "all units are enabled".
-  $enabled_list = units_get_enabled_units();
-
-  if (empty($enabled_list)) {
-    $site_enabled_units = $site_units;
-  }
-  else {
-    $enabled_list = array_combine($enabled_list, $enabled_list);
-    $site_enabled_units = array_intersect_key($site_units, $enabled_list);
-  }
-
-  // When no unit has been specified in widget settings we allow them all.
-  $allowed_units = empty($allowed_units) ? $site_enabled_units : array_intersect_key($site_enabled_units, $allowed_units);
-  
-  // When field is not required, an additional empty unit is pushed on top of the resulting list.
-  if (!$field['required']) {
-    $allowed_units = array('' => ($mode == 'short' ? '---' : t('-- Select unit --'))) + $allowed_units;
-  }
-  
-  return $allowed_units;
-}
-
-/**
- * Display a MVF field (widget).
+ * Defaut theme implementation of hook 'mvf_column_order'.
  *
- * @ingroup themeable
- */
-function theme_mvf_widget($element) {
-  formatted_number_add_js();
-  $children = '<div class="container-inline">'. $element['#children'] .'</div>';
-  return theme('form_element', $element, $children);
-}
-
-/**
- * Display a MVF field (unformatted).
+ * Render form element into a table with JS draggable weight fields.
  *
- * @ingroup themeable
- */
-function theme_mvf_formatter_unformatted($element) {
-  $value = isset($element['#item']['value']) ? $element['#item']['value'] : NULL;
-  $value2 = isset($element['#item']['value2']) ? $element['#item']['value2'] : NULL;
-  if (!is_numeric($value)) {
-    return '';
-  }
-
-  $field = content_fields($element['#field_name'], $element['#type_name']);
-  $unit = $element['#item']['unit'];
-
-  // Empty "To" value is stored as equal to the "From" value. 
-  // We display field as single value if both values are equal.
-  if ($value2 != '' && $value2 != $value) {
-    $display_mode = $field['widget']['unit_display_mode_range'];
-  }
-  else {
-    $display_mode = $field['widget']['unit_display_mode_single'];
-  }
-  // Format the whole field based on widget display options.
-  return theme('mvf_field', $value, $value2, $unit, $display_mode, ' ');
-}
-
-/**
- * Display a MVF field (formatted).
+ * @param array $vars
+ *   Arguments for theming
  *
- * @ingroup themeable
+ * @return string
+ *   Themed HTML string of the supplied arguments
  */
-function theme_mvf_formatter_generic($element) {
-  $value = isset($element['#item']['value']) ? $element['#item']['value'] : NULL;
-  $value2 = isset($element['#item']['value2']) ? $element['#item']['value2'] : NULL;
-  if (!is_numeric($value)) {
-    return '';
-  }
-  $field = content_fields($element['#field_name'], $element['#type_name']);
-  $unit = $element['#item']['unit'];
+function theme_mvf_column_order($vars) {
+  $element = $vars['element'];
 
-  // The number of decimals depends on the formatter being used and
-  // the field options.
-  if ($element['#formatter'] == 'nozeros') {
-    // For this formatter we display only relevant zeros.
-    $decimals = -1;
-  }
-  else {
-    // See if the precision should be taken from the field itself or from the unit data.
-    if (isset($field['widget']['decimals_display_mode']) && $field['widget']['decimals_display_mode'] == 'unit') {
-      $units = units_get_units();
-      if (isset($units[$unit]['decimals'])) {
-        $decimals = $units[$unit]['decimals'];
-      }
+  $header = array('Column', 'Weight');
+  $rows = array();
+
+  $table_id = 'mvf-column-order-table';
+  $group = 'mvf-order';
+  foreach (element_children($element) as $key) {
+    if (!isset($element[$key]['weight']['#attributes']['class'])) {
+      $element[$key]['weight']['#attributes']['class'] = array();
     }
-  }
-  // When no decimals have been set, use the number from the field settings.
-  if (!isset($decimals)) {
-    $decimals = (isset($field['decimals']) ? (int)$field['decimals'] : 0);
+    $element[$key]['weight']['#attributes']['class'][] = $group;
+    $rows[] = array(
+      'data' => array(
+        drupal_render($element[$key]['column']),
+        drupal_render($element[$key]['weight']),
+      ),
+      'class' => array('draggable'),
+    );
   }
 
-  // Format the values.
-  // Empty "To" value is stored as equal to the "From" value. 
-  // We display field as single value if both values are equal.
-  $formatted_number = format_number($value, $decimals);
-  if ($value2 != '' && $value2 != $value) {
-    $formatted_number2 = format_number($value2, $decimals);
-    $display_mode = $field['widget']['unit_display_mode_range'];
-  }
-  else {
-    $formatted_number2 = '';
-    $display_mode = $field['widget']['unit_display_mode_single'];
-  }
-  
-  // Format the whole field based on widget display options.
-  return theme('mvf_field', $formatted_number, $formatted_number2, $unit, $display_mode);
-}
+  $output = theme('table', array(
+    'header' => $header,
+    'rows' => $rows,
+    'attributes' => array(
+      'id' => $table_id,
+    ),
+    'caption' => t('Order of Fields'),
+  ));
+  $output .= drupal_render_children($element);
 
-/**
- * Display an value and unit with the given display options.
- *
- * @param $value
- *   "From" value (raw or formatted).
- * @param $value2
- *   "To" value (raw or formatted).  
- * @param $unit
- *   Id of the unit.
- * @param $display_options
- *   The string that provides display options as configured in widget settings.
- * @param $separator
- *   The character used as a separator when specified by '+' in display options.
- *   Defaults to non-breaking space.
- * @param $range_separator
- *   The character used as a range separator when specified by '-' in display options.
- *   Defaults to hyphen surrounded by non-breaking spaces.
- *
- * @ingroup themeable
- */
-function theme_mvf_field($value, $value2, $unit, $display_options, $separator = "\xC2\xA0", $range_separator = "\xC2\xA0-\xC2\xA0") {
-  $output = '';
-  foreach (explode('|', $display_options) as $option) {
-    switch ($option) {
-      case 'f':
-        // "From" value.
-        $output .= $value;
-        break;
-      case 't':
-        // "To" value.
-        $output .= $value2;
-        break;
-      case 's':
-        // Unit symbol.
-        $unit_symbol = units_get_symbol($unit);
-        if (!empty($unit_symbol)) {
-          $output .= $unit_symbol;
-          break;
-        }
-        // Fall back to unit short name.
-      case 'u':
-        // Unit short name.
-        $units = units_get_units();
-        $unitname = $units[$unit]['shortname'];
-        $output .= $unitname;
-        break;
-      case '+':
-        // Separator.
-        $output .= $separator;
-        break;
-      case '-':
-        // Range Separator.
-        $output .= $range_separator;
-        break;
-    }
-  }
+  drupal_add_tabledrag($table_id, 'order', 'sibling', $group);
+
   return $output;
 }
 
 /**
- * Implementation of hook_views_api().
+ * Element validate function.
  *
- * This one is used as the base to reduce errors when updating.
+ * Cleans up after the mess left by options module element validate function
+ *   for unit subfield of MVF.
  */
-function mvf_views_api() {
-  return array(
-    'api' => 2,
-    'path' => drupal_get_path('module', 'mvf') .'/includes',
+function mvf_field_widget_unit_options_validate($element, &$form_state) {
+  form_set_value($element, $element['#value'], $form_state);
+}
+
+/**
+ * Menu page callback.
+ *
+ * Menu #ajax callback path for any settings form of MVF field.
+ *
+ * @param string $type
+ *   Current setting on which it's being fired. Normally it holds values like:
+ *     'widget_settings'
+ *     'formatter_settings'
+ *      ...etc
+ * @param string $entity_type
+ *   Instanence of what entity type is being edited
+ * @param string $bundle
+ *   Bundle of the entity type
+ * @param string $field_name
+ *   Instance of what field name is being edited. It's easy to retrieve instance
+ *   definition array and field definition array using all these parameters.
+ *   This way we should be able to retrieve enough info about context in which
+ *   the function is called to process any required task
+ * @param string $subfield
+ *   Which subfield is being edited. After retrieving field and instance
+ *   definition arrays, one might want to pass them on to mvf_field_mockup() and
+ *   mvf_instance_mockup() functions
+ *
+ * @return array
+ *   Array definition of form elements that will be passed to this page callback
+ *   delivery callback, which is normally ajax_deliver()
+ */
+function mvf_ajax($type, $entity_type, $bundle, $field_name, $subfield) {
+  list($form, $form_state) = ajax_get_form();
+  drupal_process_form($form['#form_id'], $form, $form_state);
+  switch ($type) {
+    case 'formatter':
+      return $form['fields'][$field_name]['format']['settings_edit_form']['settings'][$subfield];
+      break;
+  }
+}
+
+/**
+ * FAPI element validate function.
+ *
+ * In fact function does not validate anything, however, overrides $form_state
+ * with mocked up field and instance. Supposedly this overriden $form_state
+ * will be used in Number module FAPI element validate function. After running
+ * all Number module FAPI element validate functions, the effect done by this
+ * function should be reverted by calling FAPI element validate function
+ * mvf_field_widget_validate_value_form_state_mockup_revert().
+ */
+function mvf_field_widget_validate_value_form_state_mockup_override($element, &$form_state) {
+  $subfield = 'value';
+  // Extracting field state from $form_state.
+  $field_state = field_form_get_state($element['#field_parents'], $element['#field_name'], $element['#language'], $form_state);
+  $mocked_field_state = $field_state;
+  // Mocking up field and instance definition arrays. Along the way saving in
+  // mocked $field_state the original MVF field and instance definition arrays.
+  $mocked_field_state['field'] = mvf_field_mockup($field_state['field'], $subfield);
+  $mocked_field_state['field']['mvf'] = $field_state['field'];
+  $mocked_field_state['instance'] = mvf_instance_mockup($field_state['field'], $field_state['instance'], $subfield);
+  $mocked_field_state['instance']['mvf'] = $field_state['instance'];
+  // Writing mocked up $field_state into $form_state.
+  field_form_set_state($element['#field_parents'], $element['#field_name'], $element['#language'], $form_state, $mocked_field_state);
+}
+
+/**
+ * FAPI element validate function.
+ *
+ * Function does not validate anything, however, it reverts effect caused by
+ * mvf_field_widget_validate_value_form_state_mockup_override() and puts info
+ * about real MVF field and instance into $form_state instead of one mocked up
+ * for use for a module that defines a sub field of MVF.
+ */
+function mvf_field_widget_validate_value_form_state_mockup_revert($element, &$form_state) {
+  // Extracting mocked $field_state from $form_state.
+  $mocked_field_state = field_form_get_state($element['#field_parents'], $element['#field_name'], $element['#language'], $form_state);
+  $field_state = $mocked_field_state;
+  // Retrieving original MVF field and instance definition arrays and putting
+  // them into $field_state.
+  $field_state['field'] = $mocked_field_state['field']['mvf'];
+  $field_state['instance'] = $mocked_field_state['instance']['mvf'];
+  // Writing original $field_state into $form_state.
+  field_form_set_state($element['#field_parents'], $element['#field_name'], $element['#language'], $form_state, $field_state);
+}
+
+/**
+ * FAPI element process function.
+ *
+ * Override form elements defined in entityreference native process function.
+ * Hide 'target_type' setting of entityreference subfield.
+ */
+function mvf_entityreference_field_settings_process($form, &$form_state) {
+  $form['target_type']['#access'] = FALSE;
+  $form['target_type']['#value'] = 'units_unit';
+  return $form;
+}
+
+/**
+ * Element validation function.
+ *
+ * Make MVF unit subfield configuration element to follow expected values format
+ * in entity reference. We change bundle filter in entity reference from
+ * checkboxes to radio buttons, this validation function converts values
+ * returned by radios to look like they were returned by checkboxes.
+ */
+function mvf_entityreference_selection_target_bundles_validate(&$element, &$form_state, $form) {
+  $value = array(
+    $element['#value'] => $element['#value'],
   );
+  $element['#value'] = $value;
+  form_set_value($element, $element['#value'], $form_state);
 }

@@ -1,8 +1,12 @@
 name = Measured Value Field
-description = Defines a field with an amount and a unit of measurement.
-dependencies[] = content
+description = Define a field with an amount and a unit of measurement.
+package = Fields
+core = 7.x
+
 dependencies[] = units
-dependencies[] = format_number
-dependencies[] = formatted_number
-package = CCK
-core = 6.x
+dependencies[] = number
+dependencies[] = entityreference
+
+stylesheets[all][] = mvf.css
+
+files[] = includes/EntityReference_SelectionHandler_Generic_units_unit.class.inc
