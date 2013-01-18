@@ -10,8 +10,8 @@
  */
 function mvf_field_schema($field) {
   module_load_include('module', 'mvf');
-  module_load_install(MVF_VALUE_MODULE);
-  module_load_install(MVF_UNIT_MODULE);
+  module_load_install(MVF_MODULE_UNIT);
+  module_load_install(MVF_MODULE_VALUE);
 
   $schema = array();
   // Delegating field schema generation down to subfields and merging the output
