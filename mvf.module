@@ -113,11 +113,11 @@ function mvf_field_widget_info() {
       'field types' => $field_types,
       'settings' => array(
         'meta_info' => array(
-          'unit' => array(
-            'weight' => 0,
-          ),
           'value' => array(
             'weight' => 0,
+          ),
+          'unit' => array(
+            'weight' => 1,
           ),
         ),
       ),
@@ -144,6 +144,26 @@ function mvf_field_formatter_info() {
       ),
     ),
   );
+}
+
+/**
+ * Implements hook_element_info().
+ *
+ * Define an element introduced by Measured Value Field - a value and unit
+ * measure inputs.
+ */
+function mvf_element_info() {
+  $type = array();
+  $type['mvf_widget'] = array(
+    '#input' => TRUE,
+    '#delta' => 0,
+    '#field' => array(),
+    '#instance' => array(),
+    '#langcode' => LANGUAGE_NONE,
+    '#items' => array(),
+    '#process' => array('_mvf_widget_process'),
+  );
+  return $type;
 }
 
 /**
@@ -458,14 +478,33 @@ function mvf_field_widget_settings_form($field, $instance) {
  * Implements hook_field_widget_form().
  */
 function mvf_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
-  // Array maps subfield name to its column name under which it should
-  // appear in widget and in $items array.
-  $column_map = array(
-    'value' => 'value',
-    'unit' => 'target_id',
-  );
+  $element = array(
+    '#type' => 'mvf_widget',
+    '#field' => $field,
+    '#instance' => $instance,
+    '#delta' => $delta,
+    '#langcode' => $langcode,
+    '#items' => $items,
+  ) + $element;
+  return $element;
+}
 
+/**
+ * Process function for form element type 'mvf_widget'.
+ *
+ * Expand for element into an input for value and an input for unit measure
+ * in accordance with field settings for which form element is generated.
+ */
+function _mvf_widget_process($element, &$form_state, $form) {
   $form_fields = array();
+  $field = $element['#field'];
+  $instance = $element['#instance'];
+  $items = $element['#items'];
+
+  if (!isset($element['#field_name'])) {
+    $element['#field_name'] = $element['#field']['field_name'];
+  }
+
   uasort($instance['widget']['settings']['meta_info'], 'drupal_sort_weight');
   foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
     $meta_info = $field['settings']['meta_info'][$subfield];
@@ -476,7 +515,8 @@ function mvf_field_widget_form(&$form, &$form_state, $field, $instance, $langcod
     // options module. It gets default value based on looking into the key
     // of first element in $field['columns'] array. Thus we have to make the
     // current subfield column first in columns array.
-    $column = array($column_map[$subfield] => $mocked_field['columns'][$column_map[$subfield]]);
+    $column_name = mvf_subfield_to_column($subfield);
+    $column = array($column_name => $mocked_field['columns'][$column_name]);
     $mocked_field['columns'] = $column + $mocked_field['columns'];
 
     $function = $mocked_instance['widget']['module'] . '_field_widget_form';
@@ -487,9 +527,20 @@ function mvf_field_widget_form(&$form, &$form_state, $field, $instance, $langcod
       // to represent "truth" for the subfield, i.e. $items array should
       // only include the current item and nothing else, this way we are able
       // to mock the cardinality 1 for our sub fields.
-      $mocked_items = isset($items[$delta]) ? array($items[$delta]) : array();
+      $mocked_items = isset($items[$element['#delta']]) ? array($items[$element['#delta']]) : array();
 
-      $extra = $function($form, $form_state, $mocked_field, $mocked_instance, $langcode, $mocked_items, 0, $element);
+      $tmp = array(
+        '#entity' => isset($element['#entity']) ? $element['#entity'] : (object) array(),
+        '#entity_type' => $element['#entity_type'],
+        '#required' => $element['#required'],
+        '#field_parents' => $element['#field_parents'],
+        '#field_name' => $element['#field_name'],
+        '#language' => $element['#language'],
+      );
+      if (isset($element['#entity'])) {
+        $tmp['#entity'] = $element['#entity'];
+      }
+      $extra = $function($form, $form_state, $mocked_field, $mocked_instance, $element['#langcode'], $mocked_items, 0, $tmp);
     }
     if (is_array($extra) && !empty($extra)) {
       $extra = isset($extra[$subfield]) ? $extra[$subfield] : $extra;
@@ -521,14 +572,29 @@ function mvf_field_widget_form(&$form, &$form_state, $field, $instance, $langcod
           break;
       }
 
-      $form_fields[$column_map[$subfield]] = $extra;
+      if (isset($element['#dependency'])) {
+        $extra['#dependency'] = $element['#dependency'];
+      }
+      if (isset($element['#states'])) {
+        $extra['#states'] = $element['#states'];
+      }
+
+      $form_fields[$column_name] = $extra;
     }
   }
   $element += $form_fields;
-  $element += array(
+  $element['label'] = array(
     '#type' => 'item',
     '#title' => $instance['label'],
+    '#title_display' => $element['#title_display'],
+    '#weight' => -10,
   );
+  if (isset($element['#dependency'])) {
+    $element['label']['#dependency'] = $element['#dependency'];
+  }
+  if (isset($element['#states'])) {
+    $element['label']['#states'] = $element['#states'];
+  }
   return $element;
 }
 
@@ -649,18 +715,9 @@ function mvf_field_formatter_settings_form($field, $instance, $view_mode, $form,
   );
 
   $options = array();
-  $query = new EntityFieldQuery();
-  $result = $query->entityCondition('entity_type', 'units_unit')
-      ->entityCondition('bundle', array_pop($field['settings']['unit']['handler_settings']['target_bundles']))
-      ->execute();
-  if (isset($result['units_unit']) && !empty($result['units_unit'])) {
-    $ids = array();
-    foreach ($result['units_unit'] as $v) {
-      $ids[] = $v->umid;
-    }
-    foreach (entity_load('units_unit', $ids) as $unit) {
-      $options[$unit->machine_name] = entity_label('units_unit', $unit);
-    }
+
+  foreach (units_unit_by_measure_load_multiple(array_pop($field['settings']['unit']['handler_settings']['target_bundles'])) as $unit) {
+    $options[$unit->machine_name] = entity_label('units_unit', $unit);
   }
   asort($options);
   $options = array(MVF_FORMATTER_ORIGINAL_UNIT => t('Units in which value was entered')) + $options;
@@ -701,13 +758,8 @@ function mvf_field_formatter_settings_summary($field, $instance, $view_mode) {
       break;
 
     default:
-      $query = new EntityFieldQuery();
-      $result = $query->entityCondition('entity_type', 'units_unit')
-          ->propertyCondition('machine_name', $output_unit)
-          ->execute();
-      if (isset($result['units_unit']) && count($result['units_unit']) == 1) {
-        $result = array_pop($result['units_unit']);
-        $unit = entity_load_single('units_unit', $result->umid);
+      $unit = units_unit_machine_name_load($output_unit);
+      if ($unit) {
         $summary[] = t('Output unit %unit', array('%unit' => entity_label('units_unit', $unit)));
       }
       else {
@@ -730,6 +782,12 @@ function mvf_field_formatter_settings_summary($field, $instance, $view_mode) {
  * Implements hook_field_formatter_view().
  */
 function mvf_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  // Adding CSS for default theming.
+  drupal_add_css(drupal_get_path('module', 'mvf') . '/mvf.css', array(
+    'type' => 'file',
+    'group' => CSS_DEFAULT,
+  ));
+
   $element = array();
 
   // Before we proceed we have to convert value and substitute untis in $items
@@ -759,11 +817,15 @@ function mvf_field_formatter_view($entity_type, $entity, $field, $instance, $lan
 
       $extra = module_invoke($mocked_display['module'], 'field_formatter_view', $entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $mocked_items, $mocked_display);
       if (is_array($extra)) {
+        if (!isset($extra['#prefix'])) {
+          $extra['#prefix'] = '';
+        }
+        if (!isset($extra['#suffix'])) {
+          $extra['#suffix'] = '';
+        }
         // Wrapping subfield in a separate <div> for easy theming.
-        $extra += array(
-          '#prefix' => '<div class="subfield ' . $subfield . '">',
-          '#suffix' => '</div>',
-        );
+        $extra['#prefix'] = '<div class="mvf-subfield mvf-' . $subfield . '">' . $extra['#prefix'];
+        $extra['#suffix'] .= '</div>';
         $element[$delta][$subfield] = $extra;
       }
     }
@@ -831,8 +893,8 @@ function mvf_theme() {
 /**
  * Supportive function.
  *
- * Mocks up field array of a subfield of the supplied $field array based on the
- *   parameter $subfield.
+ * Mock up field array of a subfield of the supplied $field array based on the
+ * parameter $subfield.
  *
  * @param array $field
  *   Field the includes sub fields one of which needs to be mocked up
@@ -856,6 +918,7 @@ function mvf_field_mockup($field, $subfield) {
     'cardinality' => 1,
     'deleted' => $field['deleted'],
     'settings' => isset($field['settings'][$subfield]) ? $field['settings'][$subfield] : array(),
+    'storage' => $field['storage'],
   );
   if (isset($field['columns'])) {
     $mocked_field['columns'] = $field['columns'];
@@ -863,29 +926,14 @@ function mvf_field_mockup($field, $subfield) {
   if (isset($field['bundles'])) {
     $mocked_field['bundles'] = $field['bundles'];
   }
-/*
-  // Applying any special exceptions.
-  switch ($subfield) {
-    case 'value':
-      break;
-
-    case 'unit':
-      if (!isset($mocked_field['settings']['handler_settings'])) {
-        // Entity reference module throws fatal errors if this array is not
-        // initialized.
-        //$mocked_field['settings']['handler_settings'] = array();
-      }
-      break;
-  }
-*/
   return $mocked_field;
 }
 
 /**
  * Supportive function.
  *
- * Mocks up instance array of a subfield instance of the supplied $instance
- *   array based on the parameter $subfield.
+ * Mock up instance array of a subfield instance of the supplied $instance
+ * array based on the parameter $subfield.
  *
  * @param array $field
  *   Field array. It is used to extract info and mock up the instance array
@@ -901,6 +949,7 @@ function mvf_instance_mockup($field, $instance, $subfield) {
   // We need to figure out what module supplies the widget selected for this
   // instance.
   $info = _field_info_collate_types();
+
   $widget = $info['widget types'][$field['settings']['meta_info'][$subfield]['widget']];
   $mocked_instance = array(
     'label' => $instance['label'],
@@ -940,6 +989,36 @@ function mvf_instance_mockup($field, $instance, $subfield) {
 }
 
 /**
+ * Supportive function.
+ *
+ * Convert values between sub field names and columns they represent.
+ *
+ * @param string $value
+ *   Either column name or sub field name
+ * @param string $target
+ *   Expected converted value. Allowed values are:
+ *     column - $value should hold sub field name and returned will be column
+ *       name of the supplied sub field
+ *     subfield - $value should hold column name and returned will be sub field
+ *       name of the supplied column
+ *
+ * @return string
+ *   See description of $target parameter for details on returned value
+ */
+function mvf_subfield_to_column($value, $target = 'column') {
+  $map = array(
+    'value' => 'value',
+    'unit' => 'target_id',
+  );
+
+  if ($target == 'subfield') {
+    $map = array_flip($map);
+  }
+
+  return $map[$value];
+}
+
+/**
  * Supportive function, normally should be used in formatters of MVF field.
  *
  * Convert $items array of MVF field instance from the original unit measures
@@ -960,28 +1039,15 @@ function mvf_instance_mockup($field, $instance, $subfield) {
  *   Converted $items array
  */
 function mvf_items_convert($field, $items, $destination_unit) {
-  if (!is_object($destination_unit)) {
-    if (is_numeric($destination_unit)) {
-      $destination_unit = entity_load_single('units_unit', $destination_unit);
-    }
-    else {
-      $query = new EntityFieldQuery();
-      $result = $query->entityCondition('entity_type', 'units_unit')
-          ->entityCondition('bundle', array_pop($field['settings']['unit']['handler_settings']['target_bundles']))
-          ->propertyCondition('machine_name', $destination_unit)
-          ->execute();
-      if (!isset($result['units_unit']) || count($result['units_unit']) != 1) {
-        // We couldn't find units_unit entity for destination units. As fallback
-        // we return untouched $items array.
-        return $items;
-      }
-      $result = array_pop($result['units_unit']);
-      $destination_unit = entity_load_single('units_unit', $result->umid);
-    }
+  if (is_numeric($destination_unit)) {
+    $destination_unit = units_unit_load($destination_unit);
+  }
+  elseif (!is_object($destination_unit)) {
+    $destination_unit = units_unit_machine_name_load($destination_unit);
   }
 
   if (!is_object($destination_unit)) {
-    // We couldn't find units_unit entity for destination units. As fallback
+    // We couldn't find 'units_unit' entity for destination units. As fallback
     // we return untouched $items array.
     return $items;
   }
@@ -992,7 +1058,7 @@ function mvf_items_convert($field, $items, $destination_unit) {
     $origin_units[$item['target_id']] = $item['target_id'];
   }
   $origin_units = array_keys($origin_units);
-  $origin_units = entity_load('units_unit', $origin_units);
+  $origin_units = units_unit_load_multiple('units_unit', $origin_units);
 
   foreach ($items as $delta => $item) {
     $items[$delta]['value'] = units_convert($item['value'], $origin_units[$item['target_id']]->machine_name, $destination_unit->machine_name);
@@ -1053,8 +1119,8 @@ function theme_mvf_column_order($vars) {
 /**
  * Element validate function.
  *
- * Cleans up after the mess left by options module element validate function
- *   for unit subfield of MVF.
+ * Clean up after the mess left by options module element validate function for
+ * unit subfield of MVF.
  */
 function mvf_field_widget_unit_options_validate($element, &$form_state) {
   form_set_value($element, $element['#value'], $form_state);
@@ -1112,6 +1178,14 @@ function mvf_field_widget_validate_value_form_state_mockup_override($element, &$
   $subfield = 'value';
   // Extracting field state from $form_state.
   $field_state = field_form_get_state($element['#field_parents'], $element['#field_name'], $element['#language'], $form_state);
+  if (is_null($field_state)) {
+    // This valdiation callback is called probably from views filter. So we have
+    // to mimic $field_state on the fly.
+    $field_state = array(
+      'field' => field_info_field($element['#field_name']),
+    );
+    $field_state['instance'] = mvf_field_instance($field_state['field']);
+  }
   $mocked_field_state = $field_state;
   // Mocking up field and instance definition arrays. Along the way saving in
   // mocked $field_state the original MVF field and instance definition arrays.
@@ -1169,4 +1243,49 @@ function mvf_entityreference_selection_target_bundles_validate(&$element, &$form
   );
   $element['#value'] = $value;
   form_set_value($element, $element['#value'], $form_state);
+}
+
+/**
+ * Options callback for Views handler views_handler_filter_in_operator.
+ *
+ * Allow to choose referenced units from a given list of options, rather than
+ * entering entity_id in the filter - which is the default implementation for
+ * it.
+ *
+ * @param string $field_name
+ *   Field name for which options should be generated
+ */
+function mvf_views_handler_options_list($field_name) {
+  $field = field_info_field($field_name);
+  $mocked_field = mvf_field_mockup($field, 'unit');
+  return module_invoke($mocked_field['module'], 'options_list', $mocked_field);
+}
+
+/**
+ * Supportive function.
+ *
+ * Sometimes it's necessary for MVF to pull up any instance of a specific field.
+ * This function loads and returns first found instance of the supplied field
+ * definition array
+ *
+ * @param array $field
+ *   Field definition array
+ *
+ * @return array
+ *   Instance definition array of the first found instance of the supplied field
+ */
+function mvf_field_instance($field) {
+  $entity_type = array_pop(array_keys($field['bundles']));
+  $instance = field_info_instance($entity_type, $field['field_name'], $field['bundles'][$entity_type][0]);
+  return $instance;
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function mvf_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'mvf') . '/views',
+  );
 }
