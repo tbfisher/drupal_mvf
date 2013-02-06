@@ -92,6 +92,16 @@ function mvf_field_info() {
         'instance_settings' => array(
           'value' => isset($value_settings['instance_settings']) ? $value_settings['instance_settings'] : array(),
           'unit' => isset($unit_settings['instance_settings']) ? $unit_settings['instance_settings'] : array(),
+          'mvf' => array(
+            'min' => array(
+              mvf_subfield_to_column('value') => NULL,
+              mvf_subfield_to_column('unit') => NULL,
+            ),
+            'max' => array(
+              mvf_subfield_to_column('value') => NULL,
+              mvf_subfield_to_column('unit') => NULL,
+            ),
+          ),
         ),
         'default_widget' => 'mvf_widget_default',
         'default_formatter' => 'mvf_formatter_default',
@@ -304,6 +314,48 @@ function mvf_field_validate($entity_type, $entity, $field, $instance, $langcode,
       $function($entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $items, $errors);
     }
   }
+
+  // Validating min and max values on our own.
+  foreach ($items as $delta => $item) {
+    // If any reasonable value has been submitted.
+    if (!module_invoke('mvf', 'field_is_empty', $item, $field)) {
+      $item_unit = units_unit_load($item[mvf_subfield_to_column('unit')]);
+      $item_value = $item[mvf_subfield_to_column('value')];
+      // Checking for minimal value condition.
+      if (!module_invoke('mvf', 'field_is_empty', $instance['settings']['mvf']['min'], $field)) {
+        $min = $instance['settings']['mvf']['min'];
+        $min_unit = units_unit_load($min[mvf_subfield_to_column('unit')]);
+        $min_value = units_convert($min[mvf_subfield_to_column('value')], $min_unit->machine_name, $item_unit->machine_name);
+        if ($item_value < $min_value) {
+          $errors[$field['field_name']][$langcode][$delta][] = array(
+            'error' => 'mvf_min',
+            'message' => t('%name: the value may be no less than %min_value %min_unit.', array(
+              '%name' => $instance['label'],
+              '%min_value' => $min[mvf_subfield_to_column('value')],
+              '%min_unit' => entity_label('units_unit', $min_unit),
+            )),
+          );
+        }
+      }
+
+      // Checking for maximum value condition.
+      if (!module_invoke('mvf', 'field_is_empty', $instance['settings']['mvf']['max'], $field)) {
+        $max = $instance['settings']['mvf']['max'];
+        $max_unit = units_unit_load($max[mvf_subfield_to_column('unit')]);
+        $max_value = units_convert($max[mvf_subfield_to_column('value')], $max_unit->machine_name, $item_unit->machine_name);
+        if ($item_value > $max_value) {
+          $errors[$field['field_name']][$langcode][$delta][] = array(
+            'error' => 'mvf_max',
+            'message' => t('%name: the value may be no greater than %max_value %max_unit.', array(
+              '%name' => $instance['label'],
+              '%max_value' => $max[mvf_subfield_to_column('value')],
+              '%max_unit' => entity_label('units_unit', $max_unit),
+            )),
+          );
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -404,6 +456,34 @@ function mvf_field_instance_settings_form($field, $instance) {
       ) + $extra;
     }
   }
+
+  // Also defining some our proper MVF instance settings.
+  $form['mvf'] = array(
+    '#tree' => TRUE,
+  );
+
+  $form['mvf']['min'] = array(
+    '#type' => 'mvf_widget',
+    '#title' => t('Min'),
+    '#field' => $field,
+    '#instance' => $instance,
+    '#entity_type' => $instance['entity_type'],
+    '#language' => LANGUAGE_NONE,
+    '#field_parents' => array(),
+    '#default_value' => $instance['settings']['mvf']['min'],
+  );
+
+  $form['mvf']['max'] = array(
+    '#type' => 'mvf_widget',
+    '#title' => t('Max'),
+    '#field' => $field,
+    '#instance' => $instance,
+    '#entity_type' => $instance['entity_type'],
+    '#language' => LANGUAGE_NONE,
+    '#field_parents' => array(),
+    '#default_value' => $instance['settings']['mvf']['max'],
+  );
+
   return $form;
 }
 
@@ -486,115 +566,6 @@ function mvf_field_widget_form(&$form, &$form_state, $field, $instance, $langcod
     '#langcode' => $langcode,
     '#items' => $items,
   ) + $element;
-  return $element;
-}
-
-/**
- * Process function for form element type 'mvf_widget'.
- *
- * Expand for element into an input for value and an input for unit measure
- * in accordance with field settings for which form element is generated.
- */
-function _mvf_widget_process($element, &$form_state, $form) {
-  $form_fields = array();
-  $field = $element['#field'];
-  $instance = $element['#instance'];
-  $items = $element['#items'];
-
-  if (!isset($element['#field_name'])) {
-    $element['#field_name'] = $element['#field']['field_name'];
-  }
-
-  uasort($instance['widget']['settings']['meta_info'], 'drupal_sort_weight');
-  foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
-    $meta_info = $field['settings']['meta_info'][$subfield];
-    $mocked_field = mvf_field_mockup($field, $subfield);
-    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
-
-    // We have to extra process $mocked_field in order to make it work with
-    // options module. It gets default value based on looking into the key
-    // of first element in $field['columns'] array. Thus we have to make the
-    // current subfield column first in columns array.
-    $column_name = mvf_subfield_to_column($subfield);
-    $column = array($column_name => $mocked_field['columns'][$column_name]);
-    $mocked_field['columns'] = $column + $mocked_field['columns'];
-
-    $function = $mocked_instance['widget']['module'] . '_field_widget_form';
-    $extra = FALSE;
-    if (function_exists($function)) {
-      // Since we mock sub fields as if the cardinality is 1 (we handle
-      // real cardinality in our own field), we have to mock $items array
-      // to represent "truth" for the subfield, i.e. $items array should
-      // only include the current item and nothing else, this way we are able
-      // to mock the cardinality 1 for our sub fields.
-      $mocked_items = isset($items[$element['#delta']]) ? array($items[$element['#delta']]) : array();
-
-      $tmp = array(
-        '#entity' => isset($element['#entity']) ? $element['#entity'] : (object) array(),
-        '#entity_type' => $element['#entity_type'],
-        '#required' => $element['#required'],
-        '#field_parents' => $element['#field_parents'],
-        '#field_name' => $element['#field_name'],
-        '#language' => $element['#language'],
-      );
-      if (isset($element['#entity'])) {
-        $tmp['#entity'] = $element['#entity'];
-      }
-      $extra = $function($form, $form_state, $mocked_field, $mocked_instance, $element['#langcode'], $mocked_items, 0, $tmp);
-    }
-    if (is_array($extra) && !empty($extra)) {
-      $extra = isset($extra[$subfield]) ? $extra[$subfield] : $extra;
-      unset($extra['#description']);
-      $extra['#title'] = isset($extra['#title']) ? $extra['#title'] . ' ' . $meta_info['label'] : $meta_info['label'];
-      $extra['#title_display'] = 'invisible';
-      // Doing any sub field specific customizations of subfield output.
-      switch ($subfield) {
-        case 'unit':
-          if ($mocked_instance['widget']['module'] == 'options') {
-            // Options module messes things up for us in its element validate
-            // function. So we have to clean things up in our own element validate
-            // function that will be run after the options' one.
-            $extra['#element_validate'][] = 'mvf_field_widget_unit_options_validate';
-          }
-          break;
-
-        case 'value':
-          // Number module uses FAPI element validate function
-          // number_field_widget_validate() for validating user input. That
-          // function retrieves info about field and instance from $form_state.
-          // Apparantly in our case things go bad, because it retrieves info
-          // about MVF field, instead of expected number sub field. We have to
-          // to override $form_state before that validation function and then
-          // return $form_state back to how it was after running Number's module
-          // validation function.
-          array_unshift($extra['#element_validate'], 'mvf_field_widget_validate_value_form_state_mockup_override');
-          $extra['#element_validate'][] = 'mvf_field_widget_validate_value_form_state_mockup_revert';
-          break;
-      }
-
-      if (isset($element['#dependency'])) {
-        $extra['#dependency'] = $element['#dependency'];
-      }
-      if (isset($element['#states'])) {
-        $extra['#states'] = $element['#states'];
-      }
-
-      $form_fields[$column_name] = $extra;
-    }
-  }
-  $element += $form_fields;
-  $element['label'] = array(
-    '#type' => 'item',
-    '#title' => $instance['label'],
-    '#title_display' => $element['#title_display'],
-    '#weight' => -10,
-  );
-  if (isset($element['#dependency'])) {
-    $element['label']['#dependency'] = $element['#dependency'];
-  }
-  if (isset($element['#states'])) {
-    $element['label']['#states'] = $element['#states'];
-  }
   return $element;
 }
 
@@ -888,6 +859,123 @@ function mvf_theme() {
       'render element' => 'element',
     ),
   );
+}
+
+/**
+ * Process function for form element type 'mvf_widget'.
+ *
+ * Expand for element into an input for value and an input for unit measure
+ * in accordance with field settings for which form element is generated.
+ */
+function _mvf_widget_process($element, &$form_state, $form) {
+  // Additionally values may be provided in #default_value property. So we
+  // check it too.
+  if (empty($element['#items']) && isset($element['#default_value'])) {
+    $element['#delta'] = 0;
+    $element['#items'] = array($element['#default_value']);
+  }
+
+  $form_fields = array();
+  $field = $element['#field'];
+  $instance = $element['#instance'];
+  $items = $element['#items'];
+
+  if (!isset($element['#field_name'])) {
+    $element['#field_name'] = $element['#field']['field_name'];
+  }
+
+  uasort($instance['widget']['settings']['meta_info'], 'drupal_sort_weight');
+  foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
+    $meta_info = $field['settings']['meta_info'][$subfield];
+    $mocked_field = mvf_field_mockup($field, $subfield);
+    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+
+    // We have to extra process $mocked_field in order to make it work with
+    // options module. It gets default value based on looking into the key
+    // of first element in $field['columns'] array. Thus we have to make the
+    // current subfield column first in columns array.
+    $column_name = mvf_subfield_to_column($subfield);
+    $column = array($column_name => $mocked_field['columns'][$column_name]);
+    $mocked_field['columns'] = $column + $mocked_field['columns'];
+
+    $function = $mocked_instance['widget']['module'] . '_field_widget_form';
+    $extra = FALSE;
+    if (function_exists($function)) {
+      // Since we mock sub fields as if the cardinality is 1 (we handle
+      // real cardinality in our own field), we have to mock $items array
+      // to represent "truth" for the subfield, i.e. $items array should
+      // only include the current item and nothing else, this way we are able
+      // to mock the cardinality 1 for our sub fields.
+      $mocked_items = isset($items[$element['#delta']]) ? array($items[$element['#delta']]) : array();
+
+      $tmp = array(
+        '#entity' => isset($element['#entity']) ? $element['#entity'] : (object) array(),
+        '#entity_type' => $element['#entity_type'],
+        '#required' => $element['#required'],
+        '#field_parents' => $element['#field_parents'],
+        '#field_name' => $element['#field_name'],
+        '#language' => $element['#language'],
+      );
+      if (isset($element['#entity'])) {
+        $tmp['#entity'] = $element['#entity'];
+      }
+      $extra = $function($form, $form_state, $mocked_field, $mocked_instance, $element['#langcode'], $mocked_items, 0, $tmp);
+    }
+    if (is_array($extra) && !empty($extra)) {
+      $extra = isset($extra[$subfield]) ? $extra[$subfield] : $extra;
+      unset($extra['#description']);
+      $extra['#title'] = isset($extra['#title']) ? $extra['#title'] . ' ' . $meta_info['label'] : $meta_info['label'];
+      $extra['#title_display'] = 'invisible';
+      // Doing any sub field specific customizations of subfield output.
+      switch ($subfield) {
+        case 'unit':
+          if ($mocked_instance['widget']['module'] == 'options') {
+            // Options module messes things up for us in its element validate
+            // function. So we have to clean things up in our own element validate
+            // function that will be run after the options' one.
+            $extra['#element_validate'][] = 'mvf_field_widget_unit_options_validate';
+          }
+          break;
+
+        case 'value':
+          // Number module uses FAPI element validate function
+          // number_field_widget_validate() for validating user input. That
+          // function retrieves info about field and instance from $form_state.
+          // Apparantly in our case things go bad, because it retrieves info
+          // about MVF field, instead of expected number sub field. We have to
+          // to override $form_state before that validation function and then
+          // return $form_state back to how it was after running Number's module
+          // validation function.
+          array_unshift($extra['#element_validate'], 'mvf_field_widget_validate_value_form_state_mockup_override');
+          $extra['#element_validate'][] = 'mvf_field_widget_validate_value_form_state_mockup_revert';
+          break;
+      }
+
+      if (isset($element['#dependency'])) {
+        $extra['#dependency'] = $element['#dependency'];
+      }
+      if (isset($element['#states'])) {
+        $extra['#states'] = $element['#states'];
+      }
+
+      $form_fields[$column_name] = $extra;
+    }
+  }
+  $element += $form_fields;
+  $element['label'] = array(
+    '#type' => 'item',
+    '#title' => isset($element['#title']) ? $element['#title'] : $instance['label'],
+    '#title_display' => $element['#title_display'],
+    '#weight' => -10,
+  );
+  if (isset($element['#dependency'])) {
+    $element['label']['#dependency'] = $element['#dependency'];
+  }
+  if (isset($element['#states'])) {
+    $element['label']['#states'] = $element['#states'];
+  }
+
+  return $element;
 }
 
 /**
