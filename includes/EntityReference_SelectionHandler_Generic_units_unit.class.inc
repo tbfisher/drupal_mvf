@@ -43,6 +43,12 @@ class EntityReference_SelectionHandler_Generic_units_unit extends EntityReferenc
     // of this element according to the format expected as it was still
     // checkboxes. This validation callback will take care of that.
     array_unshift($form['target_bundles']['#element_validate'], 'mvf_entityreference_selection_target_bundles_validate');
+
+    if (empty($form['target_bundles']['#options'])) {
+      $form['target_bundles']['disclaimer'] = array(
+        '#markup' => t('Measured Value Field module requires at least one measure imported/added in Units module.'),
+      );
+    }
     return $form;
   }
 }
