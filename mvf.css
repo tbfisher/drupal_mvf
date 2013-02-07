@@ -1,1 +1,3 @@
 .mvf-subfield {display:inline; padding:0 .3em 0 0;}
+.field-widget-mvf-widget-default .form-item.form-type-textfield {display:inline;}
+.field-widget-mvf-widget-default .form-item.form-type-select {display:inline;}

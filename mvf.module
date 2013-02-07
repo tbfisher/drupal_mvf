@@ -565,6 +565,9 @@ function mvf_field_widget_form(&$form, &$form_state, $field, $instance, $langcod
     '#delta' => $delta,
     '#langcode' => $langcode,
     '#items' => $items,
+    '#attached' => array(
+      'css' => array(drupal_get_path('module', 'mvf') . '/mvf.css'),
+    ),
   ) + $element;
   return $element;
 }
@@ -926,6 +929,7 @@ function _mvf_widget_process($element, &$form_state, $form) {
       unset($extra['#description']);
       $extra['#title'] = isset($extra['#title']) ? $extra['#title'] . ' ' . $meta_info['label'] : $meta_info['label'];
       $extra['#title_display'] = 'invisible';
+
       // Doing any sub field specific customizations of subfield output.
       switch ($subfield) {
         case 'unit':
