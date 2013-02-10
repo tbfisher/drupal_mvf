@@ -12,7 +12,7 @@ powerful modules allows to introduce Measured Value Field.
 
 -- REQUIREMENTS --
 
-The Units module requires the following modules:
+The Measure Value Field module requires the following modules:
 * Units
 * Entity Reference
 * Number
