@@ -7,6 +7,14 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
 
   function option_definition() {
     $option = parent::option_definition();
+    foreach ($option['value']['contains'] as $type => $v) {
+      $option['value']['contains'][$type] = array(
+        'contains' => array(
+          mvf_subfield_to_column('value') => array('default' => 0),
+          mvf_subfield_to_column('unit') => array('default' => NULL),
+        ),
+      );
+    }
     $option['field_definition'] = array();
     return $option;
   }
