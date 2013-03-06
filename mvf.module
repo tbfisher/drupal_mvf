@@ -7,7 +7,7 @@
 
 /**
  * Implementation of hook_init().
- */ 
+ */
 function mvf_init() {
   if (module_exists('diff')) {
     module_load_include('inc', 'mvf', 'includes/mvf.diff');
@@ -56,7 +56,7 @@ function mvf_field_settings($op, $field) {
         '#type' => 'fieldset',
         '#title' => t('Measured Values limits'),
         '#collapsed' => FALSE,
-        '#collapsible' => FALSE, 
+        '#collapsible' => FALSE,
         '#description' => t('Choose value limits, that will apply both to "From" and "To" values.'),
       );
       foreach ($minmax_fields as $name => $info) {
@@ -80,7 +80,7 @@ function mvf_field_settings($op, $field) {
           '#description' => $info['#description'],
         );
       }
-      
+
       $form['precision'] = array(
         '#type' => 'select',
         '#title' => t('Precision'),
@@ -117,21 +117,21 @@ function mvf_field_settings($op, $field) {
         'unit'   => array('type' => 'varchar', 'length' => 64, 'not null' => FALSE, 'sortable' => TRUE, 'views' => TRUE),
       );
       if (!empty($field['tovalue'])) {
-        $db_columns['value2'] = $db_columns['value'];    
+        $db_columns['value2'] = $db_columns['value'];
         // We don't want CCK to create additional columns, just the first.
         // We modify them our own way in views data.
         $db_columns['value2']['views'] = FALSE;
       }
       return $db_columns;
-      
+
     case 'views data':
       $data = content_views_field_views_data($field);
       $db_info = content_database_info($field);
       $table_alias = content_views_tablename($field);
-      
+
       // Swap in the CCK filter handler with custom one.
       $data[$table_alias][$field['field_name'] .'_value']['filter']['handler'] = 'mvf_filter_handler';
-      
+
       // Add in another set of fields for the "To" value.
       if (!empty($field['tovalue'])) {
         $data[$table_alias][$field['field_name'] .'_value']['field']['title'] = $data[$table_alias][$field['field_name'] .'_value']['title'];
@@ -143,7 +143,7 @@ function mvf_field_settings($op, $field) {
         $data[$table_alias][$field['field_name'] .'_value']['title short'] .= ' - ' . t('"From" value');
         $data[$table_alias][$field['field_name'] .'_value']['field']['title'] .= ' - ' . t('"From" value');
         $data[$table_alias][$field['field_name'] .'_value']['field']['title short'] .= ' - ' . t('"From" value');
-        
+
         $data[$table_alias][$field['field_name'] .'_value2']['title'] .= ' - ' . t('"To" value');
         $data[$table_alias][$field['field_name'] .'_value2']['title short'] .= ' - ' . t('"To" value');
         $data[$table_alias][$field['field_name'] .'_value2']['field']['title'] .= ' - ' . t('"To" value');
@@ -175,7 +175,7 @@ function mvf_content_is_empty($item, $field) {
 function mvf_field($op, &$node, $field, &$items, $teaser, $page) {
   if ($op == 'validate') {
     if (is_array($items)) {
-      foreach ($items as $delta => $item) {        
+      foreach ($items as $delta => $item) {
         mvf_validate_field_value($field, $delta, $item);
       }
     }
@@ -209,7 +209,7 @@ function mvf_field_formatter_info() {
 function mvf_widget_info() {
   return array(
     'mvf_widget' => array(
-      'label' => t('Values and unit'), 
+      'label' => t('Values and unit'),
       'field types' => array('mvf'),
     ),
   );
@@ -231,13 +231,13 @@ function mvf_widget_settings($op, $widget) {
         '#required' => TRUE,
         '#description' => t('Choose the format of the label that will be displayed for options of the units select list.'),
       );
-      $options_single = mvf_get_display_modes_single();
-      $options_range = mvf_get_display_modes_range();
+      $options_single = module_invoke_all('mvf_get_display_modes_single');
+      $options_range = module_invoke_all('mvf_get_display_modes_range');
       $form['unit_display'] = array(
         '#type' => 'fieldset',
         '#title' => t('MVF display mode'),
         '#collapsed' => FALSE,
-        '#collapsible' => FALSE, 
+        '#collapsible' => FALSE,
         '#description' => t('Choose the format that will be used to display this Measured Value field when a node is rendered.'),
       );
       $form['unit_display']['unit_display_mode_single'] = array(
@@ -313,9 +313,11 @@ function mvf_widget_settings($op, $widget) {
 }
 
 /**
+ * Implementation of hook_mvf_get_display_modes_single().
+ *
  * Obtain display modes for MVF fields containing single value.
  */
-function mvf_get_display_modes_single() {
+function mvf_mvf_get_display_modes_single() {
   return array(
     's|f' => t('Symbol + Value'),
     's|+|f' => t('Symbol + Space + Value'),
@@ -331,9 +333,11 @@ function mvf_get_display_modes_single() {
 }
 
 /**
+ * Implementation of hook_mvf_get_display_modes_range().
+ *
  * Obtain display modes for MVF fields containing range of values.
  */
-function mvf_get_display_modes_range() {
+function mvf_mvf_get_display_modes_range() {
   return array(
     's|f|-|t' => t('Symbol + "From" value + Space + Hyphen + Space + "To" value'),
     's|+|f|-|t' => t('Symbol + Space + "From" value + Space + Hyphen + Space + "To" value'),
@@ -382,7 +386,7 @@ function mvf_widget_process($element, $edit, $form_state, $form) {
   $from_field = 'value';
   $to_field = 'value2';
   $unit_field = 'unit';
-  
+
   $field_precision = (isset($field['precision']) && (int)$field['precision'] > 0 ? (int)$field['precision'] : 12);
   $field_decimals = (isset($field['decimals']) && (int)$field['decimals'] >= 0 ? (int)$field['decimals'] : 0);
   $field_min = (isset($field['min']) ? parse_formatted_number($field['min']) : NULL);
@@ -403,36 +407,36 @@ function mvf_widget_process($element, $edit, $form_state, $form) {
   if (!empty($thousands_sep)) {
     $extra_length += ceil($field_precision / 3);
   }
-  
+
   $description =  !empty($field['widget']['description']) ? t($field['widget']['description']) : '';
 
   if ($field['tovalue'] != 'required' && !empty($element['#default_value'][$to_field]) && $element['#default_value'][$to_field] == $element['#default_value'][$from_field]) {
     unset($element['#default_value'][$to_field]);
   }
-  
+
   // Reuse formatted number element for "From" value.
   $element = formatted_number_widget_process($element, $edit, $form_state, $form);
   // Do not use title/description of the formatted number element.
   unset($element[$from_field]['#title'], $element[$from_field]['#description']);
   // Remove Format Number validation sub-element, because we don't need it.
   unset($element['_error_element']);
-  
+
   // If this field uses the 'To' value, add matching element
   // for it.
-  if (!empty($field['tovalue'])) {    
+  if (!empty($field['tovalue'])) {
     $element[$to_field] = $element[$from_field];
     // Format the default values.
     $default_value2 = (isset($element['#value'][$to_field]) ? $element['#value'][$to_field] : '');
     if (is_numeric($default_value2)) {
       $default_value2 = format_number($default_value2, $field_decimals);
     }
-    // Empty "To" value is stored as equal to the "From" value. 
+    // Empty "To" value is stored as equal to the "From" value.
     // We hide it and present empty field like it's really empty.
     $element[$to_field]['#default_value'] = ($element[$from_field]['#default_value'] == $default_value2) ? '' : $default_value2;
     // "To" value requirement check depends on field setting.
     $element[$to_field]['#required'] = ($element['#required'] && $field['tovalue'] == 'required');
     // Adapt titles to make it clear which is the "From" and which
-    // is the "To" 
+    // is the "To"
     $element[$from_field]['#title'] = t('From');
     $element[$to_field]['#title'] = t('To');
     $element['#fieldset_description'] = $description;
@@ -464,7 +468,7 @@ function mvf_widget_process($element, $edit, $form_state, $form) {
  * Validates the unit and relation between the values and the unit.
  * Individual numeric values are validated on widget level because widget
  * provides specific number format.
- * 
+ *
  * @param array $field
  *   The field array.
  * @param array $delta
@@ -482,10 +486,10 @@ function mvf_validate_field_value($field, $delta, $item) {
   $errors['unit'] = array();
   $errors['value'] = array();
   $errors['value2'] = array();
-  
+
   // Validate values relationship.
   if ($field['tovalue']) {
-    // "To" should be greater than "From".    
+    // "To" should be greater than "From".
     if (is_numeric($value2) && is_numeric($value) && $value2 <= $value) {
       $errors['value2'][] = t('%name: the "To" value must be greater than the "From" value.', array('%name' => $widget_label));
     }
@@ -498,7 +502,7 @@ function mvf_validate_field_value($field, $delta, $item) {
     if (is_numeric($value) && !is_numeric($value2) && $field['tovalue'] == 'required') {
       $errors['value2'][] = t('%name: the "To" value must be filled in.', array('%name' => $widget_label));
     }
-    
+
   }
 
   // Validate units
@@ -534,7 +538,7 @@ function mvf_validate_field_value($field, $delta, $item) {
       $errors[] = t('%name: a valid value is required when a unit is specified.', array('%name' => $widget_label));
     }
   }
-  
+
   $error_field = $field['field_name'] .']['. $delta .'][';
   foreach ($errors as $label => $error_messages) {
     if (is_array($error_messages)) {
@@ -548,9 +552,9 @@ function mvf_validate_field_value($field, $delta, $item) {
 
 /**
  * FAPI validation of an individual Measured Value field.
- * 
+ *
  * Validate "To" value only. "From" value is validated by Formatted Number validation
- * function, because we reuse it's element.   
+ * function, because we reuse it's element.
  */
 function mvf_widget_validate($element, &$form_state) {
   $field_name = $element['#field_name'];
@@ -559,11 +563,11 @@ function mvf_widget_validate($element, &$form_state) {
   // When "To" value is disabled there's nothing to validate.
   if (empty($field['tovalue'])) {
     return;
-  } 
+  }
   $to_field = 'value2';
   $unit_field = 'unit';
   $value2 = trim($element['#value'][$to_field]);
-  
+
   // Validate "To" value.
   if ($element[$field_key]['#required'] || $value2 != '') {
     $value2 = parse_formatted_number($value2, $element[$field_key]['#required']);
@@ -581,7 +585,7 @@ function mvf_widget_validate($element, &$form_state) {
       }
       return;
     }
-  } 
+  }
 
   // Update the form field with parsed number, so it gets a valid PHP number
   // that can be used to store in the database.
@@ -617,7 +621,7 @@ function mvf_get_widget_units($field) {
     default:
       $site_units = units_get_unit_names();
   }
-  
+
   // Reduce units array to globally enabled units.
   // Units get enabled or disabled at Units module UI ("admin/content/units").
   // Empty list of enabled units returned means "all units are enabled".
@@ -633,12 +637,12 @@ function mvf_get_widget_units($field) {
 
   // When no unit has been specified in widget settings we allow them all.
   $allowed_units = empty($allowed_units) ? $site_enabled_units : array_intersect_key($site_enabled_units, $allowed_units);
-  
+
   // When field is not required, an additional empty unit is pushed on top of the resulting list.
   if (!$field['required']) {
     $allowed_units = array('' => ($mode == 'short' ? '---' : t('-- Select unit --'))) + $allowed_units;
   }
-  
+
   return $allowed_units;
 }
 
@@ -668,7 +672,7 @@ function theme_mvf_formatter_unformatted($element) {
   $field = content_fields($element['#field_name'], $element['#type_name']);
   $unit = $element['#item']['unit'];
 
-  // Empty "To" value is stored as equal to the "From" value. 
+  // Empty "To" value is stored as equal to the "From" value.
   // We display field as single value if both values are equal.
   if ($value2 != '' && $value2 != $value) {
     $display_mode = $field['widget']['unit_display_mode_range'];
@@ -715,7 +719,7 @@ function theme_mvf_formatter_generic($element) {
   }
 
   // Format the values.
-  // Empty "To" value is stored as equal to the "From" value. 
+  // Empty "To" value is stored as equal to the "From" value.
   // We display field as single value if both values are equal.
   $formatted_number = format_number($value, $decimals);
   if ($value2 != '' && $value2 != $value) {
@@ -726,7 +730,7 @@ function theme_mvf_formatter_generic($element) {
     $formatted_number2 = '';
     $display_mode = $field['widget']['unit_display_mode_single'];
   }
-  
+
   // Format the whole field based on widget display options.
   return theme('mvf_field', $formatted_number, $formatted_number2, $unit, $display_mode);
 }
@@ -737,7 +741,7 @@ function theme_mvf_formatter_generic($element) {
  * @param $value
  *   "From" value (raw or formatted).
  * @param $value2
- *   "To" value (raw or formatted).  
+ *   "To" value (raw or formatted).
  * @param $unit
  *   Id of the unit.
  * @param $display_options
