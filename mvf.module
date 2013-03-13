@@ -10,17 +10,23 @@
 
 /**
  * Module that defines field type used for sub field 'value'.
+ *
+ * @var string
  */
 define('MVF_MODULE_VALUE', 'number');
 
 /**
  * Module that defines field type used for sub field 'unit'.
+ *
+ * @var string
  */
 define('MVF_MODULE_UNIT', 'entityreference');
 
 /**
  * Constant that denotes formatting the entered value in the originally entered
  * unit measure.
+ *
+ * @var int
  */
 define('MVF_FORMATTER_ORIGINAL_UNIT', -1);
 
@@ -38,6 +44,15 @@ function mvf_menu() {
   );
 
   return $items;
+}
+
+/**
+ * Implements hook_admin_paths().
+ */
+function mvf_admin_paths() {
+  return array(
+    'mvf/ajax/*' => TRUE,
+  );
 }
 
 /**
@@ -159,17 +174,19 @@ function mvf_field_formatter_info() {
 /**
  * Implements hook_element_info().
  *
- * Define an element introduced by Measured Value Field - a value and unit
+ * Define an element introduced by Measured Value Field - a value and a unit
  * measure inputs.
  */
 function mvf_element_info() {
   $type = array();
+
   $type['mvf_widget'] = array(
     '#input' => TRUE,
     '#delta' => 0,
     '#field' => array(),
     '#instance' => array(),
     '#langcode' => LANGUAGE_NONE,
+    '#field_parents' => array(),
     '#items' => array(),
     '#process' => array('_mvf_widget_process'),
     '#attached' => array(
@@ -177,6 +194,7 @@ function mvf_element_info() {
     ),
     '#theme_wrappers' => array('form_element'),
   );
+
   return $type;
 }
 
@@ -186,7 +204,8 @@ function mvf_element_info() {
 function mvf_field_settings_form($field, $instance, $has_data) {
   $form = array();
 
-  // Firstly we recursively merge field settings for each of our sub-fields.
+  // Firstly we recursively merge field settings forms for each of our
+  // sub-fields.
   foreach ($field['settings'] as $subfield => $settings) {
     switch ($subfield) {
       case 'value':
@@ -218,7 +237,7 @@ function mvf_field_settings_form($field, $instance, $has_data) {
         if (is_array($extra) && !empty($extra)) {
           $form[$subfield] += array(
             '#type' => 'fieldset',
-            '#title' => $field['settings']['meta_info'][$subfield]['label'] . ' '. 'Settings',
+            '#title' => t('@label Settings', array('@label' => $field['settings']['meta_info'][$subfield]['label'])),
             '#collapsible' => TRUE,
           ) + $extra;
         }
@@ -233,7 +252,7 @@ function mvf_field_settings_form($field, $instance, $has_data) {
         );
         // Get a list of widgets for each of the sub fields.
         $info = _field_info_collate_types();
-        foreach ($settings as $subfield => $meta_info) {
+        foreach ($settings as $subfield2 => $meta_info) {
           // Filtering out only those widgets that apply to our sub field.
           $widgets = array();
           foreach ($info['widget types'] as $widget_type => $widget) {
@@ -247,12 +266,12 @@ function mvf_field_settings_form($field, $instance, $has_data) {
             $options[$widget_type] = $widget['label'];
           }
 
-          $form['meta_info'][$subfield] = array();
+          $form['meta_info'][$subfield2] = array();
 
-          $form['meta_info'][$subfield]['widget'] = array(
+          $form['meta_info'][$subfield2]['widget'] = array(
             '#type' => 'select',
             '#title' => t('@label Widget', array('@label' => $meta_info['label'])),
-            '#description' => t('Please, choose the widget for @label part of the field', array('@label' => $meta_info['label'])),
+            '#description' => t('Please, choose the widget for @label part of the field.', array('@label' => $meta_info['label'])),
             '#required' => TRUE,
             '#options' => $options,
             '#default_value' => $meta_info['widget'],
@@ -260,8 +279,8 @@ function mvf_field_settings_form($field, $instance, $has_data) {
 
           // Adding another hidden info.
           foreach ($meta_info as $k => $v) {
-            if (!in_array($k, array('widget'))) {
-              $form['meta_info'][$subfield][$k] = array(
+            if (!isset($form['meta_info'][$subfield2][$k])) {
+              $form['meta_info'][$subfield2][$k] = array(
                 '#type' => 'value',
                 '#value' => $v,
               );
@@ -448,7 +467,7 @@ function mvf_field_instance_settings_form($field, $instance) {
         case 'value':
           // Number module native 'min' and 'max' don't make sense in MVF,
           // because min and max should be defined considering unit measure, and
-          // not only value.
+          // not only numeric value.
           $extra['min']['#access'] = FALSE;
           $extra['max']['#access'] = FALSE;
           break;
@@ -473,8 +492,6 @@ function mvf_field_instance_settings_form($field, $instance) {
     '#field' => $field,
     '#instance' => $instance,
     '#entity_type' => $instance['entity_type'],
-    '#language' => LANGUAGE_NONE,
-    '#field_parents' => array(),
     '#default_value' => $instance['settings']['mvf']['min'],
   );
 
@@ -485,8 +502,6 @@ function mvf_field_instance_settings_form($field, $instance) {
     '#field' => $field,
     '#instance' => $instance,
     '#entity_type' => $instance['entity_type'],
-    '#language' => LANGUAGE_NONE,
-    '#field_parents' => array(),
     '#default_value' => $instance['settings']['mvf']['max'],
   );
 
@@ -938,8 +953,8 @@ function _mvf_widget_process($element, &$form_state, $form) {
         case 'unit':
           if ($mocked_instance['widget']['module'] == 'options') {
             // Options module messes things up for us in its element validate
-            // function. So we have to clean things up in our own element validate
-            // function that will be run after the options' one.
+            // function. So we have to clean things up in our own element
+            // validate function that will be run after the options' one.
             $extra['#element_validate'][] = 'mvf_field_widget_unit_options_validate';
           }
           break;
@@ -993,7 +1008,7 @@ function _mvf_widget_process($element, &$form_state, $form) {
  * parameter $subfield.
  *
  * @param array $field
- *   Field the includes sub fields one of which needs to be mocked up
+ *   Field that includes sub fields one of which needs to be mocked up
  * @param string $subfield
  *   Subfield name for which the sub field array should be mocked up
  *
@@ -1034,7 +1049,7 @@ function mvf_field_mockup($field, $subfield) {
  * @param array $field
  *   Field array. It is used to extract info and mock up the instance array
  * @param array $instance
- *   Instane array. It is used to extract info and mock up the instance array
+ *   Instance array. It is used to extract info and mock up the instance array
  * @param string $subfield
  *   Subfield name for which the sub field instance should be mocked up
  *
@@ -1129,12 +1144,19 @@ function mvf_subfield_to_column($value, $target = 'column') {
  *   Into what unit measure $items should be converted to. You may supply a
  *   fully loaded entity 'units_unit', or string, which will be considered to be
  *   machine name of destination unit, or int, which will be considered to be
- *   umid of destination unit
+ *   umid of destination unit. You may also provide constant
+ *   MVF_FORMATTER_ORIGINAL_UNIT if want to keep the units in which values were
+ *   orignally entered
  *
  * @return array
  *   Converted $items array
  */
 function mvf_items_convert($field, $items, $destination_unit) {
+  if ($destination_unit == MVF_FORMATTER_ORIGINAL_UNIT) {
+    // We were asked not to do any conversion with $items.
+    return $items;
+  }
+
   if (is_numeric($destination_unit)) {
     $destination_unit = units_unit_load($destination_unit);
   }
@@ -1151,14 +1173,14 @@ function mvf_items_convert($field, $items, $destination_unit) {
   // For scaling we load all origin units at once.
   $origin_units = array();
   foreach ($items as $item) {
-    $origin_units[$item['target_id']] = $item['target_id'];
+    $origin_units[$item[mvf_subfield_to_column('unit')]] = $item[mvf_subfield_to_column('unit')];
   }
   $origin_units = array_keys($origin_units);
-  $origin_units = units_unit_load_multiple('units_unit', $origin_units);
+  $origin_units = units_unit_load_multiple($origin_units);
 
   foreach ($items as $delta => $item) {
-    $items[$delta]['value'] = units_convert($item['value'], $origin_units[$item['target_id']]->machine_name, $destination_unit->machine_name);
-    $items[$delta]['target_id'] = $destination_unit->umid;
+    $items[$delta][mvf_subfield_to_column('value')] = units_convert($item[mvf_subfield_to_column('value')], $origin_units[$item[mvf_subfield_to_column('unit')]]->machine_name, $destination_unit->machine_name);
+    $items[$delta][mvf_subfield_to_column('unit')] = $destination_unit->umid;
   }
 
   return $items;

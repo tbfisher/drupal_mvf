@@ -42,7 +42,7 @@ function mvf_field_views_data($field) {
       case 'unit':
         // Entity Reference module provides a special filter (which can be
         // enabled in field settings) to filter referenced entities using a
-        // select form elemnt instead of views numeric filter suggested by
+        // select form element instead of views numeric filter suggested by
         // default in Field API. However we need to substitute callback for
         // options of that select because in our case it's just a subfield, not
         // a real field.

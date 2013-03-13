@@ -4,7 +4,7 @@
  * EntityReference_SelectionHandler_Generic class altered for MVF needs.
  *
  * For MVF only one bundle allowed for referencing per field. In field settings
- * form checkboxes are subtituted to radio buttons when selecting bundles if
+ * form checkboxes are substituted to radio buttons when selecting bundles if
  * the field, that is being configured, is a MVF one.
  */
 class EntityReference_SelectionHandler_Generic_units_unit extends EntityReference_SelectionHandler_Generic {
