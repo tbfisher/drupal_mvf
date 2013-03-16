@@ -82,9 +82,7 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
       '#type' => 'mvf_widget',
       '#field' => $this->options['field_definition'],
       '#instance' => $instance,
-      '#language' => LANGUAGE_NONE,
       '#entity_type' => $instance['entity_type'],
-      '#field_parents' => array(),
       '#pre_render' => array('mvf_views_label_pre_render'),
       //'#title_display' => 'invisible',
     ) + $this->options_to_mvf_default_value($this->value['value']);
@@ -100,9 +98,7 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
         '#type' => 'mvf_widget',
         '#field' => $this->options['field_definition'],
         '#instance' => $instance,
-        '#language' => LANGUAGE_NONE,
         '#entity_type' => $instance['entity_type'],
-        '#field_parents' => array(),
         '#pre_render' => array('mvf_views_label_pre_render'),
         //'#title_display' => 'invisible',
       ) + $this->options_to_mvf_default_value($this->value['min']) + $form['value']['min'];
@@ -113,9 +109,7 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
         '#type' => 'mvf_widget',
         '#field' => $this->options['field_definition'],
         '#instance' => $instance,
-        '#language' => LANGUAGE_NONE,
         '#entity_type' => $instance['entity_type'],
-        '#field_parents' => array(),
         '#pre_render' => array('mvf_views_label_pre_render'),
         //'#title_display' => 'invisible',
       ) + $this->options_to_mvf_default_value($this->value['max']) + $form['value']['max'];
@@ -130,8 +124,8 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
     $required_subvalues = drupal_map_assoc($operator['required subvalues']);
     foreach (array_intersect_key($form_state['values']['options']['value'], $required_subvalues) as $type => $subvalue) {
       if (module_invoke('mvf', 'field_is_empty', $subvalue, $this->options['field_definition'])) {
-        form_error($form['value'][$type], t('Please, enter values into @title', array(
-          '@title' => $form['value'][$type]['#title'],
+        form_error($form['value'][$type], t('Please, enter values into %title', array(
+          '%title' => $form['value'][$type]['#title'],
         )));
       }
     }
@@ -189,23 +183,14 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
     );
     $measure = array_pop($this->options['field_definition']['settings']['unit']['handler_settings']['target_bundles']);
     $from_unit = units_unit_load($this->value['value'][mvf_subfield_to_column('unit')]);
-    $where = array();
+    $where = db_or();
 
     foreach (units_unit_by_measure_load_multiple($measure) as $to_unit) {
       $converted_value = units_convert($this->value['value'][mvf_subfield_to_column('value')], $from_unit->machine_name, $to_unit->machine_name);
-      $where[] = array(
-        'value' => $converted_value,
-        'unit' => array_shift(entity_extract_ids('units_unit', $to_unit)),
-      );
+      $where->condition(db_and()->condition($field['value'], $converted_value, $this->operator)->condition($field['unit'], array_shift(entity_extract_ids('units_unit', $to_unit))));
     }
 
-    $group = $this->where_group();
-    foreach ($where as $v) {
-      $this->query->add_where($group, db_and()
-        ->condition($field['value'], $v['value'], $this->operator)
-        ->condition($field['unit'], $v['unit'])
-      );
-    }
+    $this->query->add_where($this->options['group'], $where);
   }
 
   function op_between($field) {
@@ -214,7 +199,7 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
       'unit' => $this->table_alias . '.' . $this->definition['field_name'] . '_' . mvf_subfield_to_column('unit'),
     );
     $measure = array_pop($this->options['field_definition']['settings']['unit']['handler_settings']['target_bundles']);
-    $where = array();
+    $where = db_or();
 
     foreach (units_unit_by_measure_load_multiple($measure) as $to_unit) {
       $from_units = array(
@@ -228,34 +213,27 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
         $converted_value[$k] = units_convert($this->value[$k][mvf_subfield_to_column('value')], $from_units[$k]->machine_name, $to_unit->machine_name);
       }
 
-      $where[] = array(
-        'value' => $converted_value,
-        'unit' => array_shift(entity_extract_ids('units_unit', $to_unit)),
-      );
-    }
-
-    $group = $this->where_group();
-
-    foreach ($where as $v) {
+      $to_unit = array_shift(entity_extract_ids('units_unit', $to_unit));
       switch ($this->operator) {
         case 'between':
-          $this->query->add_where($group, db_and()
-            ->condition($field['value'], $v['value'], $this->operator)
-            ->condition($field['unit'], $v['unit'])
+          $where->condition(db_and()
+            ->condition($field['value'], $converted_value, $this->operator)
+            ->condition($field['unit'], $to_unit)
           );
           break;
 
         case 'not between':
-          $this->query->add_where($group, db_and()
+          $where->condition(db_and()
             ->condition(db_or()
-              ->condition($field['value'], $v['value']['min'], '<=')
-              ->condition($field['value'], $v['value']['max'], '>=')
+              ->condition($field['value'], $converted_value['min'], '<=')
+              ->condition($field['value'], $converted_value['max'], '>=')
             )
-            ->condition($field['unit'], $v['unit'])
+            ->condition($field['unit'], $to_unit)
           );
           break;
       }
     }
+    $this->query->add_where($this->options['group'], $where);
   }
 
   function admin_summary() {
@@ -266,29 +244,31 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
       return t('exposed');
     }
 
-    $options = $this->operator_options('short');
-    $output = check_plain($options[$this->operator]);
-    if (in_array($this->operator, $this->operator_values(2))) {
-      $units = units_unit_load_multiple(array($this->value['min'][mvf_subfield_to_column('unit')], $this->value['max'][mvf_subfield_to_column('unit')]));
-      $units = array(
-        'min' => $units[$this->value['min'][mvf_subfield_to_column('unit')]],
-        'max' => $units[$this->value['max'][mvf_subfield_to_column('unit')]],
-      );
+    $operators = $this->operators();
+    $output = check_plain($operators[$this->operator]['short']) . ' ';
+    switch ($operators[$this->operator]['values']) {
+      case 1:
+        $output .= t('@value @unit', array(
+          '@value' => $this->value['value']['value'],
+          '@unit' => entity_label('units_unit', units_unit_load($this->value['value'][mvf_subfield_to_column('unit')])),
+        ));
+        break;
 
-      $output .= ' ' . t('@min_value @min_unit and @max_value @max_unit', array(
-        '@min_value' => $this->value['min'][mvf_subfield_to_column('value')],
-        '@min_unit' => entity_label('units_unit', $units['min']),
-        '@max_value' => $this->value['max'][mvf_subfield_to_column('value')],
-        '@max_unit' => entity_label('units_unit', $units['max']),
-      ));
-    }
-    elseif (in_array($this->operator, $this->operator_values(1))) {
-      $output .= ' ' . t('@value @unit', array(
-        '@value' => $this->value['value']['value'],
-        '@unit' => entity_label('units_unit', units_unit_load($this->value['value'][mvf_subfield_to_column('unit')])),
-      ));
-    }
+      case 2:
+        $units = units_unit_load_multiple(array($this->value['min'][mvf_subfield_to_column('unit')], $this->value['max'][mvf_subfield_to_column('unit')]));
+        $units = array(
+          'min' => $units[$this->value['min'][mvf_subfield_to_column('unit')]],
+          'max' => $units[$this->value['max'][mvf_subfield_to_column('unit')]],
+        );
 
+        $output .= t('@min_value @min_unit and @max_value @max_unit', array(
+          '@min_value' => $this->value['min'][mvf_subfield_to_column('value')],
+          '@min_unit' => entity_label('units_unit', $units['min']),
+          '@max_value' => $this->value['max'][mvf_subfield_to_column('value')],
+          '@max_unit' => entity_label('units_unit', $units['max']),
+        ));
+        break;
+    }
     return $output;
   }
 
@@ -311,23 +291,5 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
         0 => $options,
       ),
     );
-  }
-
-  /**
-   * Supportive function.
-   *
-   * Define name of WHERE group, which will be passed to
-   * $this->query->add_where(). We need our group to be OR and not AND. And
-   * since we are gonna make OR we need to reserve a separate group for our
-   * conditions, where we will OR conditions, and then our group will be joined
-   * to all conditions with AND.
-   *
-   * @return string
-   *   Group name
-   */
-  function where_group() {
-    $group = $this->options['group'] . '_' . $this->definition['field_name'];
-    $this->query->set_where_group('OR', $group);
-    return $group;
   }
 }

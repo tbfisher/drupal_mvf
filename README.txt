@@ -17,6 +17,10 @@ The Measure Value Field module requires the following modules:
 * Entity Reference
 * Number
 
+-- INTEGRATION --
+Measured Value Field module currently integrates with the following modules:
+* Views - by providing its custom filter handler
+
 -- INSTALLATION --
 
 Install as usual. After installation you will have additional field types

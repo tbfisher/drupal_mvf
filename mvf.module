@@ -1407,3 +1407,10 @@ function mvf_views_api() {
     'path' => drupal_get_path('module', 'mvf') . '/views',
   );
 }
+
+/**
+ * Implements hook_numeric_field_filter_converter_info().
+ */
+function mvf_numeric_field_filter_converter_info() {
+  return array('NumericFieldFilterConverterMVF');
+}
