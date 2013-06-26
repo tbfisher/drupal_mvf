@@ -185,7 +185,7 @@ function mvf_element_info() {
     '#delta' => 0,
     '#field' => array(),
     '#instance' => array(),
-    '#langcode' => LANGUAGE_NONE,
+    '#language' => LANGUAGE_NONE,
     '#field_parents' => array(),
     '#items' => array(),
     '#process' => array('_mvf_widget_process'),
@@ -904,6 +904,9 @@ function _mvf_widget_process($element, &$form_state, $form) {
   if (!isset($element['#field_name'])) {
     $element['#field_name'] = $element['#field']['field_name'];
   }
+  if (!isset($element['#bundle'])) {
+    $element['#bundle'] = $instance['bundle'];
+  }
 
   uasort($instance['widget']['settings']['meta_info'], 'drupal_sort_weight');
   foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
@@ -927,20 +930,26 @@ function _mvf_widget_process($element, &$form_state, $form) {
       // to represent "truth" for the subfield, i.e. $items array should
       // only include the current item and nothing else, this way we are able
       // to mock the cardinality 1 for our sub fields.
-      $mocked_items = isset($items[$element['#delta']]) ? array($items[$element['#delta']]) : array();
+      $mocked_delta = 0;
+      $mocked_items = isset($items[$element['#delta']]) ? array($mocked_delta => $items[$element['#delta']]) : array();
 
       $tmp = array(
-        '#entity' => isset($element['#entity']) ? $element['#entity'] : (object) array(),
         '#entity_type' => $element['#entity_type'],
-        '#required' => $element['#required'],
-        '#field_parents' => $element['#field_parents'],
+        '#bundle' => $element['#bundle'],
         '#field_name' => $element['#field_name'],
         '#language' => $element['#language'],
+        '#field_parents' => $element['#field_parents'],
+        // @todo: #columns.
+        '#title' => $element['#title'],
+        '#description' => '',
+        '#required' => $element['#required'],
+        '#delta' => $mocked_delta,
+        '#entity' => isset($element['#entity']) ? $element['#entity'] : (object) array(),
       );
       if (isset($element['#entity'])) {
         $tmp['#entity'] = $element['#entity'];
       }
-      $extra = $function($form, $form_state, $mocked_field, $mocked_instance, $element['#langcode'], $mocked_items, 0, $tmp);
+      $extra = $function($form, $form_state, $mocked_field, $mocked_instance, $element['#language'], $mocked_items, $mocked_delta, $tmp);
     }
     if (is_array($extra) && !empty($extra)) {
       $extra = isset($extra[$subfield]) ? $extra[$subfield] : $extra;
