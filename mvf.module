@@ -168,6 +168,18 @@ function mvf_field_formatter_info() {
         ),
       ),
     ),
+    'mvf_formatter_symbol' => array(
+      'label' => t('Configurable digits, units as symbol'),
+      'description' => t('Formatter for unit measured field. Allows you to choose formatter for the numerical part from available numerical formatters, while rendering output unit as a symbol.'),
+      'field types' => $field_types,
+      'settings' => array(
+        'unit' => array(),
+        'value' => array(),
+        'mvf' => array(
+          'formatter_units_unit' => MVF_FORMATTER_ORIGINAL_UNIT,
+        ),
+      ),
+    ),
   );
 }
 
@@ -604,97 +616,124 @@ function mvf_field_formatter_settings_form($field, $instance, $view_mode, $form,
   $superior_formatter = $instance['display'][$view_mode];
 
   foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
-    // Looking for formatters that support our sub field type.
-    $formatters = array();
-    foreach ($info['formatter types'] as $formatter_type => $formatter) {
-      if (in_array($meta_info['field_type'], $formatter['field types'])) {
-        $formatters[$formatter_type] = $formatter;
-      }
+
+    switch ($superior_formatter['type']) {
+      case 'mvf_formatter_defualt':
+        // Default formatter implies delegating formatting to both sub
+        // formatters, as to value subformatter, as to unit subformatter.
+        $is_delegating_unit = TRUE;
+        break;
+
+      case 'mvf_formatter_symbol':
+        // Symbol formatter already knows how to render the unit part - it
+        // should be rendered as symbol, so only the value part should be
+        // delegated to a sub formatter.
+        $is_delegating_unit = FALSE;
+        break;
+
+      default:
+        // We are not supposed to be here, let's fallback on delegation.
+        $is_delegating_unit = TRUE;
+        break;
     }
 
-    $fieldset_id = 'mvf-formatter-' . $subfield;
-    $element[$subfield] = array(
-      '#type' => 'fieldset',
-      '#title' => $meta_info['label'],
-      '#collapsible' => TRUE,
-      '#prefix' => '<div id="' . $fieldset_id . '">',
-      '#suffix' => '</div>',
-    );
-
-    $options = array();
-    foreach ($formatters as $formatter_type => $formatter) {
-      $options[$formatter_type] = $formatter['label'];
-    }
-    // Since we update values via #ajax, the chosen value in $superior_formatter
-    // can be overriden in $form_state by the current unsaved (yet) value.
-    if (isset($form_state['values']['fields'][$field['field_name']]['settings_edit_form']['settings'][$subfield]['formatter'])) {
-      $formatter = $form_state['values']['fields'][$field['field_name']]['settings_edit_form']['settings'][$subfield]['formatter'];
-    }
-    elseif (isset($superior_formatter['settings'][$subfield]['formatter'])) {
-      // Then we check superior formatter to see if there are any stored
-      // settings there.
-      $formatter = $superior_formatter['settings'][$subfield]['formatter'];
+    if ($subfield == 'unit' && !$is_delegating_unit) {
+      // We do not want to show the sub formatter options for unit.
     }
     else {
-      // If we end up here, it's the 1st time formatter settings form is opened,
-      // since there is no stored settings in superior formatter. So lastly we
-      // fallback on sub field default formatter.
-      $formatter = $meta_info['formatter'];
-    }
-    // After we have let current $form_state values to override currently saved
-    // formatter for the subfield, we are now able to mock $field and $instance
-    // so that in the mocked results the overriden formatter will be reflected.
-    $instance['display'][$view_mode]['settings'][$subfield]['formatter'] = $formatter;
-    $mocked_field = mvf_field_mockup($field, $subfield);
-    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
-
-    $element[$subfield]['formatter'] = array(
-      '#type' => 'select',
-      '#title' => t('Formatter'),
-      '#required' => TRUE,
-      '#description' => t('Please, choose formatter for the sub field.'),
-      '#options' => $options,
-      '#default_value' => $formatter,
-      '#ajax' => array(
-        'path' => 'mvf/ajax/formatter/' . $instance['entity_type'] . '/' . $instance['bundle'] . '/' . $field['field_name'] . '/' . $subfield,
-        'wrapper' => $fieldset_id,
-        'event' => 'change',
-        'effect' => 'fade',
-      ),
-    );
-
-    if (isset($formatters[$formatter])) {
-      $formatter = $formatters[$formatter];
-      // Since the sub formatter has been chosen, now we can check whether
-      // the module that defines sub formatter desires to define some settings
-      // for its sub formatter too.
-      $function = $formatter['module'] . '_field_formatter_settings_form';
-      $extra = NULL;
-      if (function_exists($function)) {
-        $extra = $function($mocked_field, $mocked_instance, $view_mode, $form, $form_state);
-      }
-      if (is_array($extra)) {
-        // Doing any customizations after collecting data from the module that
-        // defines a sub formatter.
-        switch ($subfield) {
-          case 'value':
-            if ($field['settings']['meta_info'][$subfield]['field_type'] == 'number_integer') {
-              // For integer we have to define 'scale' and 'decimal_separator'
-              // because number module keeps these 2 parameters behind the
-              // scenes for integer (since they don't make sense to integer) in
-              // order to use the same formatter for all numbers.
-              $extra['scale'] = array(
-                '#type' => 'value',
-                '#value' => $formatter['settings']['scale'],
-              );
-              $extra['decimal_separator'] = array(
-                '#type' => 'value',
-                '#value' => $formatter['settings']['decimal_separator'],
-              );
-            }
-            break;
+      // Looking for formatters that support our sub field type.
+      $formatters = array();
+      foreach ($info['formatter types'] as $formatter_type => $formatter) {
+        if (in_array($meta_info['field_type'], $formatter['field types'])) {
+          $formatters[$formatter_type] = $formatter;
         }
-        $element[$subfield] += $extra;
+      }
+
+      $fieldset_id = 'mvf-formatter-' . $subfield;
+      $element[$subfield] = array(
+        '#type' => 'fieldset',
+        '#title' => $meta_info['label'],
+        '#collapsible' => TRUE,
+        '#prefix' => '<div id="' . $fieldset_id . '">',
+        '#suffix' => '</div>',
+      );
+
+      $options = array();
+      foreach ($formatters as $formatter_type => $formatter) {
+        $options[$formatter_type] = $formatter['label'];
+      }
+      // Since we update values via #ajax, the chosen value in $superior_formatter
+      // can be overriden in $form_state by the current unsaved (yet) value.
+      if (isset($form_state['values']['fields'][$field['field_name']]['settings_edit_form']['settings'][$subfield]['formatter'])) {
+        $formatter = $form_state['values']['fields'][$field['field_name']]['settings_edit_form']['settings'][$subfield]['formatter'];
+      }
+      elseif (isset($superior_formatter['settings'][$subfield]['formatter'])) {
+        // Then we check superior formatter to see if there are any stored
+        // settings there.
+        $formatter = $superior_formatter['settings'][$subfield]['formatter'];
+      }
+      else {
+        // If we end up here, it's the 1st time formatter settings form is opened,
+        // since there is no stored settings in superior formatter. So lastly we
+        // fallback on sub field default formatter.
+        $formatter = $meta_info['formatter'];
+      }
+
+      // After we have let current $form_state values to override currently saved
+      // formatter for the subfield, we are now able to mock $field and $instance
+      // so that in the mocked results the overriden formatter will be reflected.
+      $instance['display'][$view_mode]['settings'][$subfield]['formatter'] = $formatter;
+      $mocked_field = mvf_field_mockup($field, $subfield);
+      $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+
+      $element[$subfield]['formatter'] = array(
+        '#type' => 'select',
+        '#title' => t('Formatter'),
+        '#required' => TRUE,
+        '#description' => t('Please, choose formatter for the sub field.'),
+        '#options' => $options,
+        '#default_value' => $formatter,
+        '#ajax' => array(
+          'path' => 'mvf/ajax/formatter/' . $instance['entity_type'] . '/' . $instance['bundle'] . '/' . $field['field_name'] . '/' . $subfield,
+          'wrapper' => $fieldset_id,
+          'event' => 'change',
+          'effect' => 'fade',
+        ),
+      );
+
+      if (isset($formatters[$formatter])) {
+        $formatter = $formatters[$formatter];
+        // Since the sub formatter has been chosen, now we can check whether
+        // the module that defines sub formatter desires to define some settings
+        // for its sub formatter too.
+        $function = $formatter['module'] . '_field_formatter_settings_form';
+        $extra = NULL;
+        if (function_exists($function)) {
+          $extra = $function($mocked_field, $mocked_instance, $view_mode, $form, $form_state);
+        }
+        if (is_array($extra)) {
+          // Doing any customizations after collecting data from the module that
+          // defines a sub formatter.
+          switch ($subfield) {
+            case 'value':
+              if ($field['settings']['meta_info'][$subfield]['field_type'] == 'number_integer') {
+                // For integer we have to define 'scale' and 'decimal_separator'
+                // because number module keeps these 2 parameters behind the
+                // scenes for integer (since they don't make sense to integer)
+                // in order to use the same formatter for all numbers.
+                $extra['scale'] = array(
+                  '#type' => 'value',
+                  '#value' => $formatter['settings']['scale'],
+                );
+                $extra['decimal_separator'] = array(
+                  '#type' => 'value',
+                  '#value' => $formatter['settings']['decimal_separator'],
+                );
+              }
+              break;
+          }
+          $element[$subfield] += $extra;
+        }
       }
     }
   }
@@ -732,13 +771,27 @@ function mvf_field_formatter_settings_form($field, $instance, $view_mode, $form,
 function mvf_field_formatter_settings_summary($field, $instance, $view_mode) {
   $summary = array();
 
+  $superior_formatter = $instance['display'][$view_mode];
+
   foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
-    $mocked_field = mvf_field_mockup($field, $subfield);
-    $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
-    $formatter = $mocked_instance['display'][$view_mode];
-    $tmp = module_invoke($formatter['module'], 'field_formatter_settings_summary', $mocked_field, $mocked_instance, $view_mode);
-    if ($tmp) {
-      $summary[$subfield] = $tmp;
+    $subsummary = '';
+
+    if ($superior_formatter['type'] == 'mvf_formatter_symbol' && $subfield == 'unit') {
+      // For symbol formatter for unit sub field we do not have to outsource the
+      // task of generation of summary to the sub formatter.
+      $subsummary = 'Units as symbol';
+    }
+    else {
+      // We collect what subformatter wants to output into the summary for the
+      // the sub field.
+      $mocked_field = mvf_field_mockup($field, $subfield);
+      $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+      $formatter = $mocked_instance['display'][$view_mode];
+      $subsummary = module_invoke($formatter['module'], 'field_formatter_settings_summary', $mocked_field, $mocked_instance, $view_mode);
+    }
+
+    if ($subsummary) {
+      $summary[$subfield] = $subsummary;
     }
   }
 
@@ -800,14 +853,28 @@ function mvf_field_formatter_view($entity_type, $entity, $field, $instance, $lan
   foreach ($items as $delta => $item) {
     $element[$delta] = array();
     foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
-      $mocked_field = mvf_field_mockup($field, $subfield);
-      $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
-      $mocked_display = $mocked_instance['display'][$mocked_view_mode];
-      unset($mocked_instance['display'][$mocked_view_mode]);
-      $mocked_delta = 0;
-      $mocked_items = array($mocked_delta => $item);
+      if ($subfield == 'unit' && $display['type'] == 'mvf_formatter_symbol') {
+        // We were requested to render the unit as symbol, so we do not delegate
+        // rendering of unit to the sub formatter, we do it outselves.
+        $extra = array(
+          '#markup' => $item['entity']->symbol ? $item['entity']->symbol : entity_label('units_unit', $item['entity']),
+        );
+      }
+      else {
+        // We are supposed to delegate formatting of this subfield to the sub
+        // formatter, whatever sub formatter was chosen in the settings of our
+        // superior formatter.
+        $mocked_field = mvf_field_mockup($field, $subfield);
+        $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
+        $mocked_display = $mocked_instance['display'][$mocked_view_mode];
+        unset($mocked_instance['display'][$mocked_view_mode]);
+        $mocked_delta = 0;
+        $mocked_items = array($mocked_delta => $item);
 
-      $extra = module_invoke($mocked_display['module'], 'field_formatter_view', $entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $mocked_items, $mocked_display);
+        $extra = module_invoke($mocked_display['module'], 'field_formatter_view', $entity_type, $entity, $mocked_field, $mocked_instance, $langcode, $mocked_items, $mocked_display);
+      }
+
+
       if (is_array($extra)) {
         if (!isset($extra['#prefix'])) {
           $extra['#prefix'] = '';
