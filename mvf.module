@@ -130,6 +130,9 @@ function mvf_field_info() {
  * Implements hook_field_widget_info().
  */
 function mvf_field_widget_info() {
+  // We need info about units_unit entity type.
+  $units_entity_info = entity_get_info('units_unit');
+
   $field_types = array_keys(module_invoke('mvf', 'field_info'));
   return array(
     'mvf_widget_default' => array(
@@ -143,6 +146,9 @@ function mvf_field_widget_info() {
           ),
           'unit' => array(
             'weight' => 1,
+            // What property of units_unit entity to use for human readable
+            // label, when generating options array for the widget.
+            'label_property' => $units_entity_info['entity keys']['label'],
           ),
         ),
       ),
@@ -577,6 +583,25 @@ function mvf_field_widget_settings_form($field, $instance) {
     $form['meta_info'][$subfield]['column'] = array(
       '#markup' => $field['settings']['meta_info'][$subfield]['label'],
     );
+
+    // Any extra per sub field customizations, adjustments.
+    switch ($subfield) {
+      case 'unit':
+        $unit_entity_info = entity_get_info('units_unit');
+
+        $form['meta_info'][$subfield]['label_property'] = array(
+          '#type' => 'select',
+          '#title' => t('Label Property'),
+          '#required' => TRUE,
+          '#options' => array(
+            $unit_entity_info['entity keys']['label'] => t('Label'),
+            'symbol' => t('Symbol'),
+          ),
+          '#default_value' => isset($instance['widget']['settings']['meta_info'][$subfield]['label_property']) ? $instance['widget']['settings']['meta_info'][$subfield]['label_property'] : NULL,
+        );
+        break;
+    }
+
     $form['meta_info'][$subfield]['weight'] = array(
       '#type' => 'weight',
       '#title' => t('Weight'),
@@ -1032,6 +1057,38 @@ function _mvf_widget_process($element, &$form_state, $form) {
             // function. So we have to clean things up in our own element
             // validate function that will be run after the options' one.
             $extra['#element_validate'][] = 'mvf_field_widget_unit_options_validate';
+
+            // Additionally we have to make sure the labeling is consistent with
+            // what we have in widget settings. By default options module
+            // generate options for EntityReference fields based on 'label'
+            // property of each entity. MVF needs to support labeling by
+            // 'symbol' property too. Thus if our widget is set up to generate
+            // options based on 'symbol' property, we have to slightly adjust
+            // the already generated #options array.
+            switch ($instance['widget']['settings']['meta_info']['unit']['label_property']) {
+              case 'symbol':
+                // Let's substitute labels of entities by their symbols.
+                if (!empty($extra['#options'])) {
+                  $umids = array_keys($extra['#options']);
+                  unset($umids['_none']);
+                  $units = units_unit_load_multiple($umids);
+                  $options = array();
+                  foreach ($units as $unit) {
+                    $label = $unit->{$instance['widget']['settings']['meta_info']['unit']['label_property']} ? $unit->{$instance['widget']['settings']['meta_info']['unit']['label_property']} : entity_label('units_unit', $unit);
+                    $options[entity_id('units_unit', $unit)] = $label;
+                  }
+                  // Resort the new options array, because alphabetical order
+                  // probably has changed.
+                  asort($options);
+                  // Putting on top of the new options array the 'None' option
+                  // if it was originally present.
+                  if (isset($extra['#options']['_none'])) {
+                    $options = array('_none' => $extra['#options']['_none']) + $options;
+                  }
+                  $extra['#options'] = $options;
+                }
+                break;
+            }
           }
           break;
 
@@ -1074,6 +1131,7 @@ function _mvf_widget_process($element, &$form_state, $form) {
   if (isset($element['#states'])) {
     $element['label']['#states'] = $element['#states'];
   }
+
   return $element;
 }
 
@@ -1276,7 +1334,7 @@ function mvf_items_convert($field, $items, $destination_unit) {
 function theme_mvf_column_order($vars) {
   $element = $vars['element'];
 
-  $header = array('Column', 'Weight');
+  $header = array('Column', 'Weight', 'Extra Settings');
   $rows = array();
 
   $table_id = 'mvf-column-order-table';
@@ -1290,6 +1348,7 @@ function theme_mvf_column_order($vars) {
       'data' => array(
         drupal_render($element[$key]['column']),
         drupal_render($element[$key]['weight']),
+        drupal_render($element[$key]),
       ),
       'class' => array('draggable'),
     );
