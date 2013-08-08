@@ -542,11 +542,21 @@ function mvf_entityreference_field_instance_settings_validate($form, &$form_stat
 }
 
 /**
+ * Form API process function.
+ *
+ * Store a flag in $form_state that depicts to MVF widget that this widget is
+ * for entering default value.
+ */
+function mvf_field_instance_settings_process($element, $form, &$form_state) {
+  dpm(func_get_args());
+  $form_state['mvf']['widget']['default_value'] = TRUE;
+  return $element;
+}
+
+/**
  * Implements hook_field_widget_settings_form().
  */
 function mvf_field_widget_settings_form($field, $instance) {
-  $form = array();
-
   foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
     $mocked_field = mvf_field_mockup($field, $subfield);
     $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
@@ -624,6 +634,7 @@ function mvf_field_widget_form(&$form, &$form_state, $field, $instance, $langcod
     '#langcode' => $langcode,
     '#items' => $items,
   ) + $element;
+
   return $element;
 }
 
@@ -952,13 +963,27 @@ function mvf_field_formatter_prepare_view($entity_type, $entities, $field, $inst
  * Implements hook_field_is_empty().
  */
 function mvf_field_is_empty($item, $field) {
-  $is_empty = FALSE;
-
-  // If at least one sub field is empty, the entire field is considered empty.
-  foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
-    $mocked_field = mvf_field_mockup($field, $subfield);
-    $is_empty = $is_empty || (bool) module_invoke($mocked_field['module'], 'field_is_empty', $item, $mocked_field);
+  // The logic is the following. Normally if at least one sub field is empty,
+  // the entire field is considered empty. However, if it is value for default
+  // value of MVF, we consider it empty only if all the sub fields are empty.
+  if (isset($item['default_value_widget']) && $item['default_value_widget']) {
+    // Here we process default value widget.
+    $is_empty = TRUE;
+    foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+      $mocked_field = mvf_field_mockup($field, $subfield);
+      $is_empty = $is_empty && (bool) module_invoke($mocked_field['module'], 'field_is_empty', $item, $mocked_field);
+    }
   }
+  else {
+    // This is a normal value for a regular MVF widget. If at least one sub
+    // field is empty, the entire field is considered empty.
+    $is_empty = FALSE;
+    foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
+      $mocked_field = mvf_field_mockup($field, $subfield);
+      $is_empty = $is_empty || (bool) module_invoke($mocked_field['module'], 'field_is_empty', $item, $mocked_field);
+    }
+  }
+
 
   return $is_empty;
 }
@@ -972,6 +997,38 @@ function mvf_theme() {
       'render element' => 'element',
     ),
   );
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ *
+ * Alter Field UI Field Edit form so that it supports entering just default
+ * unit, and not necessary value of MVF.
+ */
+function mvf_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
+  if (in_array($form['#field']['type'], array_keys(module_invoke('mvf', 'field_info')))) {
+    // If this form operates on MVF field, we throw in additional validate
+    // callback for default value widget, which will enable support for entering
+    // just unit and no value.
+    $default_value_widget = &$form['instance']['default_value_widget'][$form['#field']['field_name']][LANGUAGE_NONE][0];
+    if (!isset($default_value_widget['#element_validate'])) {
+      $default_value_widget['#element_validate'] = array();
+    }
+    array_unshift($default_value_widget['#element_validate'], 'mvf_field_widget_form_default_value_validate');
+  }
+}
+
+/**
+ * Form API validate callback for default value widget of MVF.
+ *
+ * Mark in submitted values that the values are for default value of some
+ * instance of MVF. Since it is default values, entering only unit without any
+ * value should be fine and the entered unit should be considered default unit
+ * for this instance of MVF.
+ */
+function mvf_field_widget_form_default_value_validate($element, &$form_state) {
+  $element['#value']['default_value_widget'] = TRUE;
+  form_set_value($element, $element['#value'], $form_state);
 }
 
 /**
