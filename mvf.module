@@ -542,21 +542,11 @@ function mvf_entityreference_field_instance_settings_validate($form, &$form_stat
 }
 
 /**
- * Form API process function.
- *
- * Store a flag in $form_state that depicts to MVF widget that this widget is
- * for entering default value.
- */
-function mvf_field_instance_settings_process($element, $form, &$form_state) {
-  dpm(func_get_args());
-  $form_state['mvf']['widget']['default_value'] = TRUE;
-  return $element;
-}
-
-/**
  * Implements hook_field_widget_settings_form().
  */
 function mvf_field_widget_settings_form($field, $instance) {
+  $form = array();
+
   foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
     $mocked_field = mvf_field_mockup($field, $subfield);
     $mocked_instance = mvf_instance_mockup($field, $instance, $subfield);
