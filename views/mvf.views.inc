@@ -33,9 +33,12 @@ function mvf_field_views_data($field) {
     switch ($subfield) {
       case 'value':
         // For 'value' subfield we have our own numeric filter that not only
-        // takes into account the entered value but the unit measure too.
+        // takes into account the entered value but the unit measure too. The
+        // same way we have our own sort handler, that sorts not only judging
+        // by entering value, but also considers units in which it is measured.
         foreach ($data as $table_name => $table_data) {
           $data[$table_name][$field_name]['filter']['handler'] = 'mvf_handler_filter_mvf';
+          $data[$table_name][$field_name]['sort']['handler'] = 'mvf_handler_sort_mvf';
         }
         break;
 

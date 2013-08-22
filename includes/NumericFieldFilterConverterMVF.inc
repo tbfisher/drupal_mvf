@@ -19,7 +19,7 @@ class NumericFieldFilterConverterMVF implements NumericFieldFilterConvertableInt
    * @return array
    *   Array of field types this class supports
    */
-  static public function supportedFieldTypes() {
+  public static function supportedFieldTypes() {
     return array_keys(module_invoke('mvf', 'field_info'));
   }
 
@@ -37,7 +37,7 @@ class NumericFieldFilterConverterMVF implements NumericFieldFilterConvertableInt
    *   Column name for which the filter handler should be changed to the handler
    *   provided by Numeric Field Filter module
    */
-  static public function columnName($field) {
+  public static function columnName($field) {
     return mvf_subfield_to_column('value');
   }
 
@@ -72,7 +72,7 @@ class NumericFieldFilterConverterMVF implements NumericFieldFilterConvertableInt
    *   Extra value form elements that need to be merged into value form of
    *   filter handler by the supplied field type
    */
-  static public function valueFormElement($form, $form_state, $field, $instance, $default_value) {
+  public static function valueFormElement($form, $form_state, $field, $instance, $default_value) {
     $element = array(
       '#type' => 'mvf_widget',
       '#field' => $field,
@@ -113,7 +113,7 @@ class NumericFieldFilterConverterMVF implements NumericFieldFilterConvertableInt
    *   SQL expression that yeilds value of that field, it will be used to
    *   compose WHERE condition in a Views filter
    */
-  static public function fieldConvertToExpression($field, $table_alias, $values, $revision = FALSE) {
+  public static function fieldConvertToExpression($field, $table_alias, $values, $revision = FALSE) {
     // First of all we need to load measure of MVF field.
     $measure = reset($field['settings']['unit']['handler_settings']['target_bundles']);
     $measure = units_measure_machine_name_load($measure);
@@ -136,7 +136,7 @@ class NumericFieldFilterConverterMVF implements NumericFieldFilterConvertableInt
     //   WHEN [unit1] THEN [factor1]
     //   WHEN [unit2] THEN [factor2]
     //   ...
-    //   END
+    // END
     // Summing the above:
     // [field-value-column] * CASE [field-unit-column]
     //                          WHEN [unit1] THEN [factor1]

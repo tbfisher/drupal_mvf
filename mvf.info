@@ -9,4 +9,5 @@ dependencies[] = entityreference
 
 files[] = includes/EntityReference_SelectionHandler_Generic_units_unit.class.inc
 files[] = views/mvf_handler_filter_mvf.inc
+files[] = views/mvf_handler_sort_mvf.inc
 files[] = includes/NumericFieldFilterConverterMVF.inc
