@@ -11,6 +11,13 @@
 function mvf_field_views_data($field) {
   $data = field_views_field_default_views_data($field);
 
+  // We want to overwrite views default field handler, because click sort logic
+  // for MVF field is not identical to the standard one implemented in the views
+  // default field handler.
+  foreach ($data as $table_name => $table_data) {
+    $data[$table_name][$field['field_name']]['field']['handler'] = 'mvf_handler_field_mvf';
+  }
+
   // Collecting views integration info from sub fields. And letting them to
   // provide their own views integration on their sub columns.
   foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
@@ -35,7 +42,7 @@ function mvf_field_views_data($field) {
         // For 'value' subfield we have our own numeric filter that not only
         // takes into account the entered value but the unit measure too. The
         // same way we have our own sort handler, that sorts not only judging
-        // by entering value, but also considers units in which it is measured.
+        // by entered value, but also considers units in which it is measured.
         foreach ($data as $table_name => $table_data) {
           $data[$table_name][$field_name]['filter']['handler'] = 'mvf_handler_filter_mvf';
           $data[$table_name][$field_name]['sort']['handler'] = 'mvf_handler_sort_mvf';
