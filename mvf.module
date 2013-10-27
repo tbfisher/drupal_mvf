@@ -1321,7 +1321,7 @@ function mvf_items_convert($field, $items, $destination_unit) {
 }
 
 /**
- * Defaut theme implementation of hook 'mvf_column_order'.
+ * Default theme implementation of hook 'mvf_column_order'.
  *
  * Render form element into a table with JS draggable weight fields.
  *
