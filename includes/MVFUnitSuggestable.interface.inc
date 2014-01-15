@@ -22,7 +22,7 @@ interface MVFUnitSuggestable {
    *
    * @return array|null
    *   Array of information about this Unit Suggester. If for some reason this
-   *   Unit Suggester cannot be appliled to provided $field and $instance, then
+   *   Unit Suggester cannot be applied to provided $field and $instance, then
    *   return NULL. If returned array, such array should have the following
    *   structure:
    *   - title: (string) Human readable name of Unit Suggester
@@ -48,7 +48,7 @@ interface MVFUnitSuggestable {
    *
    * @return array
    *   Field API form elements definition representing additional settings that
-   *   this Unit Suggester needs for its funcitonlity
+   *   this Unit Suggester needs for its functionality
    */
   public static function getSettingsForm($measure, $field, $instance, $settings = array());
 
