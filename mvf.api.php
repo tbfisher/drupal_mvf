@@ -13,7 +13,10 @@
  * things come to formatting an MVF field. It should determine its suggest based
  * on current context, eg.: current user's profile, current language, its module
  * settings, etc. See below an example of such PHP class. Also, see description
- * of MVFUnitSuggestable interface.
+ * of MVFUnitSuggestable interface. In order to reduce confusion name your
+ * suggester classes following such pattern:
+ * MyModuleNameUnitSuggesterDescription, eg.: MVFUnitSuggesterLocale or
+ * MVFUnitSuggesterHardCoded
  *
  * @return array
  *   Array of Unit Suggesters PHP class names, that your module wants to provide

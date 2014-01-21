@@ -1035,10 +1035,14 @@ function mvf_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
  * Implements hook_mvf_unit_suggester_info().
  */
 function mvf_mvf_unit_suggester_info() {
-  return array(
+  $output = array(
     'MVFUnitSuggesterOriginal',
     'MVFUnitSuggesterHardCoded',
   );
+  if (module_exists('locale')) {
+    $output[] = 'MVFUnitSuggesterLocale';
+  }
+  return $output;
 }
 
 /**
