@@ -23,3 +23,25 @@ function mvf_field_schema($field) {
 
   return $schema;
 }
+
+/**
+ * Adjust settings of MVF fields to the format of a new version.
+ */
+function mvf_update_7101() {
+  // We need info about units_unit entity type.
+  $units_entity_info = entity_get_info('units_unit');
+
+  $mvf_field_types = array_keys(module_invoke('mvf', 'field_info'));
+  foreach (field_info_field_map() as $field_name => $field_info) {
+    if (in_array($field_info['type'], $mvf_field_types)) {
+      $field_info = field_info_field($field_name);
+      foreach ($field_info['bundles'] as $entity_type => $bundles) {
+        foreach ($bundles as $bundle) {
+          $instance = field_info_instance($entity_type, $field_name, $bundle);
+          $instance['widget']['settings']['meta_info']['unit']['label_property'] = $units_entity_info['entity keys']['label'];
+          field_update_instance($instance);
+        }
+      }
+    }
+  }
+}

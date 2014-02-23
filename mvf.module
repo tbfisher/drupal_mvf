@@ -1149,6 +1149,7 @@ function _mvf_widget_process($element, &$form_state, $form) {
             // 'symbol' property too. Thus if our widget is set up to generate
             // options based on 'symbol' property, we have to slightly adjust
             // the already generated #options array.
+
             switch ($instance['widget']['settings']['meta_info']['unit']['label_property']) {
               case 'symbol':
                 // Let's substitute labels of entities by their symbols.
@@ -1180,7 +1181,7 @@ function _mvf_widget_process($element, &$form_state, $form) {
           // Number module uses FAPI element validate function
           // number_field_widget_validate() for validating user input. That
           // function retrieves info about field and instance from $form_state.
-          // Apparantly in our case things go bad, because it retrieves info
+          // Apparently in our case things go bad, because it retrieves info
           // about MVF field, instead of expected number sub field. We have to
           // to override $form_state before that validation function and then
           // return $form_state back to how it was after running Number's module
