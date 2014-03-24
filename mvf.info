@@ -6,6 +6,7 @@ core = 7.x
 dependencies[] = units
 dependencies[] = number
 dependencies[] = entityreference
+dependencies[] = options
 
 files[] = includes/EntityReference_SelectionHandler_Generic_units_unit.class.inc
 files[] = views/mvf_handler_filter_mvf.inc
