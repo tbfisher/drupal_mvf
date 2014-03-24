@@ -1795,3 +1795,13 @@ function mvf_views_api() {
 function mvf_numeric_field_filter_converter_info() {
   return array('NumericFieldFilterConverterMVF');
 }
+
+/**
+ * Return an array of field types that are provided by MVF.
+ *
+ * @return array
+ *   Array of field types that are provided by MVF.
+ */
+function mvf_field_types() {
+  return array_keys(mvf_field_info());
+}

@@ -12,7 +12,7 @@
  * each MVF. This suggester does the job of relating MVF units to locales and
  * the job of suggesting the correct one based on the value of current locale.
  */
-class MVFUnitSuggesterLocale implements MVFUnitSuggestable {
+class MVFUnitSuggesterLocale extends MVFUnitSuggesterAbstract {
 
   public static function getInfo($measure, $field, $instance) {
     return array(

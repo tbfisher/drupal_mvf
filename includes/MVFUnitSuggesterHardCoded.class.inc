@@ -10,7 +10,7 @@
  *
  * Output all items in one single unit, chosen in formatter setups.
  */
-class MVFUnitSuggesterHardCoded implements MVFUnitSuggestable {
+class MVFUnitSuggesterHardCoded extends MVFUnitSuggesterAbstract {
 
   public static function getInfo($measure, $field, $instance) {
     return array(

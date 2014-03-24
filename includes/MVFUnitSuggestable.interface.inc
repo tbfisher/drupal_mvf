@@ -79,4 +79,5 @@ interface MVFUnitSuggestable {
    *     unit
    */
   public static function suggestUnit($items, $field, $instance, $entity, $entity_type, $settings = array());
+
 }
