@@ -6,42 +6,6 @@
  */
 
 /**
- * Implements hook_menu().
- */
-function mvf_per_user_menu() {
-  $items = array();
-
-  // TODO: maybe it'd be cool to have some general overview table where admin
-  // can see current statuses of all MVF fields, whether per user output units
-  // are enabled for them.
-
-  $items['mvf-per-user/%mvf_per_user_field'] = array(
-    'title' => 'Output Unit for MVF fields',
-    'title callback' => 'mvf_per_user_config_form_title',
-    'title arguments' => array(1),
-    'description' => 'Define whether users can control output units for a MVF field.',
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('mvf_per_user_config_form', 1),
-    'access arguments' => array('administer mvf output per user'),
-    'file' => 'mvf_per_user.pages.inc',
-  );
-
-  return $items;
-}
-
-/**
- * Implements hook_permission().
- */
-function mvf_per_user_permission() {
-  return array(
-    'administer mvf output per user' => array(
-      'title' => t('Administer MVF output per user'),
-      'description' => t('Administer output units for MVF fields on per user basis.'),
-    ),
-  );
-}
-
-/**
  * Implements hook_mvf_unit_suggester_info().
  */
 function mvf_per_user_mvf_unit_suggester_info() {
@@ -78,25 +42,6 @@ function mvf_per_user_unit_field_name($mvf_field) {
 }
 
 /**
- * Menu load function.
- *
- * Load a MVF field by its machine name.
- *
- * @param string $field_name
- *   Machine name of a MVF field to load
- *
- * @return array|bool
- *   Field definition array or FALSE if such MVF field does not exist
- */
-function mvf_per_user_field_load($field_name) {
-  $field = field_info_field($field_name);
-  if (in_array($field['type'], mvf_field_types())) {
-    return $field;
-  }
-  return FALSE;
-}
-
-/**
  * Load function for unit field of a MVF field.
  *
  * In the unit field users can store desired output unit for a corresponding MVF
@@ -110,7 +55,10 @@ function mvf_per_user_field_load($field_name) {
  *   field does not exist
  */
 function mvf_per_user_unit_field_load($field_name) {
-  $field = mvf_per_user_field_load($field_name);
+  $field = field_info_field($field_name);
+  if (!in_array($field['type'], mvf_field_types())) {
+    return FALSE;
+  }
   try {
     $unit_field_name = mvf_per_user_unit_field_name($field);
   }
@@ -119,20 +67,4 @@ function mvf_per_user_unit_field_load($field_name) {
   }
   $unit_field = field_info_field($unit_field_name);
   return is_array($unit_field) ? $unit_field : FALSE;
-}
-
-/**
- * Menu title callback for path 'mvf-per-user/%mvf_per_user_field'.
- *
- * @param array $mvf_field
- *   Fully loaded MVF field, for which per user output unit status could be
- *   changed
- *
- * @return string
- *   Title for the path 'mvf-per-user/%mvf_per_user_field'
- */
-function mvf_per_user_config_form_title($mvf_field) {
-  return t('Output Unit on per User Basis for "!field_name" field', array(
-    '!field_name' => $mvf_field['field_name'],
-  ));
 }

@@ -141,12 +141,11 @@ function mvf_field_widget_info() {
   // We need info about units_unit entity type.
   $units_entity_info = entity_get_info('units_unit');
 
-  $field_types = array_keys(module_invoke('mvf', 'field_info'));
   return array(
     'mvf_widget_default' => array(
       'label' => t('Configurable sub widgets'),
       'description' => t('Default widget for unit measured field. Allows you to choose widgets independently for value and unit measure sub fields.'),
-      'field types' => $field_types,
+      'field types' => mvf_field_types(),
       'settings' => array(
         'meta_info' => array(
           'value' => array(
@@ -168,7 +167,7 @@ function mvf_field_widget_info() {
  * Implements hook_field_formatter_info().
  */
 function mvf_field_formatter_info() {
-  $field_types = array_keys(module_invoke('mvf', 'field_info'));
+  $field_types = mvf_field_types();
   $settings = array(
     'unit' => array(),
     'value' => array(),
@@ -1019,7 +1018,7 @@ function mvf_theme() {
  * unit, and not necessary value of MVF.
  */
 function mvf_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
-  if (in_array($form['#field']['type'], array_keys(module_invoke('mvf', 'field_info')))) {
+  if (in_array($form['#field']['type'], mvf_field_types())) {
     // If this form operates on MVF field, we throw in additional validate
     // callback for default value widget, which will enable support for entering
     // just unit and no value.
@@ -1028,6 +1027,31 @@ function mvf_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
       $default_value_widget['#element_validate'] = array();
     }
     array_unshift($default_value_widget['#element_validate'], 'mvf_field_widget_form_default_value_validate');
+  }
+}
+
+/**
+ * Implements hook_field_update_instance().
+ */
+function mvf_field_update_instance($instance, $prior_instance) {
+  $field_map = field_info_field_map();
+  if (in_array($field_map[$instance['field_name']]['type'], mvf_field_types())) {
+    // Notify each unit suggester if its status has changed.
+    foreach ($instance['display'] as $view_mode => $v) {
+      $statuses = isset($instance['display'][$view_mode]['settings']['mvf']['unit_suggester_settings']) ? $instance['display'][$view_mode]['settings']['mvf']['unit_suggester_settings'] : array();
+      $prior_statuses = isset($prior_instance['display'][$view_mode]['settings']['mvf']['unit_suggester_settings']) ? $prior_instance['display'][$view_mode]['settings']['mvf']['unit_suggester_settings'] : array();
+      foreach ($statuses as $unit_suggester => $v2) {
+        $unit_suggester_status = isset($statuses[$unit_suggester]['enable']) ? $statuses[$unit_suggester]['enable'] : FALSE;
+        $prior_unit_suggester_status = isset($prior_statuses[$unit_suggester]['enable']) ? $prior_statuses[$unit_suggester]['enable'] : FALSE;
+        if ($unit_suggester_status != $prior_unit_suggester_status) {
+          $field = field_info_field($instance['field_name']);
+          $measure = mvf_measure_extract($field);
+
+          $method_name = $unit_suggester_status ? 'enabled' : 'disabled';
+          mvf_unit_suggester_invoke_method($unit_suggester, $method_name, array($measure, $field, $instance, $statuses[$unit_suggester]));
+        }
+      }
+    }
   }
 }
 

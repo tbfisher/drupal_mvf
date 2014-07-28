@@ -30,6 +30,50 @@ interface MVFUnitSuggestable {
   public static function getInfo($measure, $field, $instance);
 
   /**
+   * Notification for UnitSuggester that it was enabled in some formatter.
+   *
+   * Whenever some UnitSuggester is enabled in any formatter for any instance
+   * of a field this method is invoked in the corresponding UnitSuggester class
+   * in order to allow the UnitSuggester to react and do some necessary
+   * initialization tasks.
+   *
+   * @param object $measure
+   *   Fully loaded 'units_measure' entity, on which is set up the MVF field
+   * @param array $field
+   *   Field API field definition array of MVF field
+   * @param array $instance
+   *   Field API instance definition array of MVF field
+   * @param string $view_mode
+   *   View mode (key in $instance['display'] array) in which this UnitSuggester
+   *   was enabled
+   * @param array $settings
+   *   Array of currently stored settings in the provided $instance
+   */
+  public static function enabled($measure, $field, $instance, $view_mode, $settings = array());
+
+  /**
+   * Notification for UnitSuggester that it was disabled in some formatter.
+   *
+   * Whenever some UnitSuggester is disabled in any formatter for any instance
+   * of a field this method is invoked in the corresponding UnitSuggester class
+   * in order to allow the UnitSuggester to react and do some necessary
+   * destruction tasks.
+   *
+   * @param object $measure
+   *   Fully loaded 'units_measure' entity, on which is set up the MVF field
+   * @param array $field
+   *   Field API field definition array of MVF field
+   * @param array $instance
+   *   Field API instance definition array of MVF field
+   * @param string $view_mode
+   *   View mode (key in $instance['display'] array) in which this UnitSuggester
+   *   was enabled
+   * @param array $settings
+   *   Array of currently stored settings in the provided $instance
+   */
+  public static function disabled($measure, $field, $instance, $view_mode, $settings = array());
+
+  /**
    * Generate form elements array of extra settings for this Unit Suggester.
    *
    * These settings will be stored by MVF module in $instance of a MVF field.

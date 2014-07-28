@@ -17,6 +17,20 @@ abstract class MVFUnitSuggesterAbstract implements MVFUnitSuggestable {
   /**
    * The most straightforward implementation of the method.
    *
+   * Simply does nothing.
+   */
+  public static function enabled($measure, $field, $instance, $view_mode, $settings = array()) {}
+
+  /**
+   * The most straightforward implementation of the method.
+   *
+   * Simply does nothing.
+   */
+  public static function disabled($measure, $field, $instance, $view_mode, $settings = array()) {}
+
+  /**
+   * The most straightforward implementation of the method.
+   *
    * Simply return an empty settings form.
    */
   public static function getSettingsForm($measure, $field, $instance, $settings = array()) {
