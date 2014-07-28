@@ -648,7 +648,7 @@ function mvf_field_formatter_settings_form($field, $instance, $view_mode, $form,
   foreach ($field['settings']['meta_info'] as $subfield => $meta_info) {
 
     switch ($superior_formatter['type']) {
-      case 'mvf_formatter_defualt':
+      case 'mvf_formatter_default':
         // Default formatter implies delegating formatting to both sub
         // formatters, as to value subformatter, as to unit subformatter.
         $is_delegating_unit = TRUE;
