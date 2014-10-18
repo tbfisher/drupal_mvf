@@ -21,7 +21,7 @@ class MVFPerUserUnitSuggesterUser extends MVFUnitSuggesterAbstract {
 
   public static function enabled($measure, $field, $instance, $view_mode, $settings = array()) {
     // Making sure corresponding unit field is created.
-    if (!mvf_per_user_unit_field_load($field['field_name'])) {
+    if (!mvf_per_user_unit_field_load($field)) {
       try {
         $unit_field = array(
           'type' => $field['settings']['meta_info']['unit']['field_type'],
@@ -29,8 +29,8 @@ class MVFPerUserUnitSuggesterUser extends MVFUnitSuggesterAbstract {
           // We allow to edit this field via Field UI because folks may want to
           // customize lots of things about it.
           'locked' => FALSE,
-          // We will copy settings for our entityreference field from corresponding
-          // part of the MVF field.
+          // We will copy settings for our entityreference field from
+          // corresponding part of the MVF field.
           'settings' => $field['settings']['unit'],
         );
 
@@ -78,7 +78,7 @@ class MVFPerUserUnitSuggesterUser extends MVFUnitSuggesterAbstract {
 
     // If we got down here, it means not a single display for this MVF field has
     // per user output enabled. So we will remove the corresponding unit field.
-    $unit_field = mvf_per_user_unit_field_load($field['field_name']);
+    $unit_field = mvf_per_user_unit_field_load($field);
     field_delete_field($unit_field['field_name']);
   }
 

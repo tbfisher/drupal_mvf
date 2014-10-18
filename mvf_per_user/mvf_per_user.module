@@ -6,6 +6,16 @@
  */
 
 /**
+ * Implements hook_field_delete_field().
+ */
+function mvf_per_user_field_delete_field($field) {
+  // Cleaning up MVF per user corresponding field if it exists.
+  if ($mvf_field = mvf_per_user_unit_field_load($field)) {
+    field_delete_field($mvf_field['field_name']);
+  }
+}
+
+/**
  * Implements hook_mvf_unit_suggester_info().
  */
 function mvf_per_user_mvf_unit_suggester_info() {
@@ -47,15 +57,18 @@ function mvf_per_user_unit_field_name($mvf_field) {
  * In the unit field users can store desired output unit for a corresponding MVF
  * field.
  *
- * @param string $field_name
- *   Machine name of a MVF field, whose unit field should be loaded
+ * @param array|string $field
+ *   Machine name or field array of a MVF field, whose unit field should be
+ *   loaded
  *
  * @return array|bool
  *   Fully loaded field definition array of unit field or FALSE if such unit
  *   field does not exist
  */
-function mvf_per_user_unit_field_load($field_name) {
-  $field = field_info_field($field_name);
+function mvf_per_user_unit_field_load($field) {
+  if (!is_array($field)) {
+    $field = field_info_field($field);
+  }
   if (!in_array($field['type'], mvf_field_types())) {
     return FALSE;
   }
