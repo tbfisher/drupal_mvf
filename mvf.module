@@ -1145,12 +1145,14 @@ function _mvf_widget_process($element, &$form_state, $form) {
         '#language' => $element['#language'],
         '#field_parents' => $element['#field_parents'],
         // @todo: #columns.
-        '#title' => $element['#title'],
         '#description' => '',
         '#required' => $element['#required'],
         '#delta' => $mocked_delta,
-        '#entity' => isset($element['#entity']) ? $element['#entity'] : (object) array(),
+        '#entity' => (object) array(),
       );
+      if (isset($element['#title'])) {
+        $tmp['#title'] = $element['#title'];
+      }
       if (isset($element['#entity'])) {
         $tmp['#entity'] = $element['#entity'];
       }

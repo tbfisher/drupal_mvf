@@ -90,7 +90,7 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
     // want to change about it is to override parent's 'textfield' with our
     // 'mvf_widget' form element introducing in such way an option to choose
     // unit measure for filtering value.
-    $instance['label'] = t('Value');
+    $instance['label'] = '';
     $value_element = array(
       '#tree' => TRUE,
       '#type' => 'mvf_widget',
@@ -98,7 +98,6 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
       '#instance' => $instance,
       '#entity_type' => $instance['entity_type'],
       '#pre_render' => array('mvf_views_label_pre_render'),
-      //'#title_display' => 'invisible',
     ) + $this->options_to_mvf_default_value($this->value['value']);
     if (isset($form['value']['#type'])) {
       $form['value'] = $value_element + $form['value'];
@@ -114,7 +113,6 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
         '#instance' => $instance,
         '#entity_type' => $instance['entity_type'],
         '#pre_render' => array('mvf_views_label_pre_render'),
-        //'#title_display' => 'invisible',
       ) + $this->options_to_mvf_default_value($this->value['min']) + $form['value']['min'];
     }
     if (isset($form['value']['max']['#type'])) {
@@ -125,7 +123,6 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
         '#instance' => $instance,
         '#entity_type' => $instance['entity_type'],
         '#pre_render' => array('mvf_views_label_pre_render'),
-        //'#title_display' => 'invisible',
       ) + $this->options_to_mvf_default_value($this->value['max']) + $form['value']['max'];
     }
   }
@@ -135,7 +132,12 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
     // Additionally we want to validate filter data is entered.
     $operator = $this->operators();
     $operator = $operator[$form_state['values']['options']['operator']];
-    $required_subvalues = drupal_map_assoc($operator['required subvalues']);
+    $required_subvalues = array();
+    // There are required sub values only if the filter is not exposed or
+    // exposed and required.
+    if (!$this->options['exposed'] || ($this->options['exposed'] && $form_state['values']['options']['expose']['required'])) {
+      $required_subvalues = drupal_map_assoc($operator['required subvalues']);
+    }
     foreach (array_intersect_key($form_state['values']['options']['value'], $required_subvalues) as $type => $subvalue) {
       if (module_invoke('mvf', 'field_is_empty', $subvalue, $this->options['field_definition'])) {
         form_error($form['value'][$type], t('Please, enter values into %title', array(
@@ -149,8 +151,27 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
    * Since our filter operates on 2 form elements we can't use parent's method.
    */
   function accept_exposed_input($input) {
-    parent::accept_exposed_input($input);
-    return TRUE;
+    // Converting single value into array('value' => $value), as the rest of
+    // this code expects it reside there.
+    $value = &$input[$this->options['expose']['identifier']];
+    $info = $this->operators();
+    $operator = $info[$this->operator];
+    if ($operator['values'] == 1 && in_array('value', $operator['required subvalues'])) {
+      $value = array('value' => $value);
+    }
+
+    $accept = parent::accept_exposed_input($input);
+    if (!$accept) {
+      return FALSE;
+    }
+
+    foreach ($operator['required subvalues'] as $required_subvalue) {
+      if (module_invoke('mvf', 'field_is_empty', $value[$required_subvalue], $this->options['field_definition'])) {
+        return FALSE;
+      }
+    }
+
+    return $accept;
   }
 
   function build_group_validate($form, &$form_state) {
