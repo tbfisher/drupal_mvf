@@ -876,7 +876,7 @@ function mvf_field_formatter_view($entity_type, $entity, $field, $instance, $lan
     foreach ($instance['widget']['settings']['meta_info'] as $subfield => $meta_info) {
       if ($subfield == 'unit' && $display['type'] == 'mvf_formatter_symbol') {
         // We were requested to render the unit as symbol, so we do not delegate
-        // rendering of unit to the sub formatter, we do it outselves.
+        // rendering of unit to the sub formatter, we do it ourselves.
         $extra = array(
           '#markup' => $item['entity']->symbol ? $item['entity']->symbol : entity_label('units_unit', $item['entity']),
         );
@@ -907,6 +907,11 @@ function mvf_field_formatter_view($entity_type, $entity, $field, $instance, $lan
         $extra['#prefix'] = '<div class="mvf-subfield mvf-' . $subfield . '">' . $extra['#prefix'];
         $extra['#suffix'] .= '</div>';
         $element[$delta][$subfield] = $extra;
+
+        // Adding extra CSS classes for easier theming.
+        list(, , $bundle) = entity_extract_ids('units_unit', $item['entity']);
+        $element[$delta]['#prefix'] = '<span class="mvf-unit-' . entity_id('units_unit', $item['entity']) . ' mvf-measure-' . $bundle . '">';
+        $element[$delta]['#suffix'] = '</span>';
       }
     }
   }
