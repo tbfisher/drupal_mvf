@@ -1803,7 +1803,8 @@ function mvf_views_handler_options_list($field_name) {
  *   Instance definition array of the first found instance of the supplied field
  */
 function mvf_field_instance($field) {
-  $entity_type = array_pop(array_keys($field['bundles']));
+  $entity_type = array_keys($field['bundles']);
+  $entity_type = array_pop($entity_type);
   $instance = field_info_instance($entity_type, $field['field_name'], $field['bundles'][$entity_type][0]);
   return $instance;
 }

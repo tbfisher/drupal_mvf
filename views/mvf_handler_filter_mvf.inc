@@ -24,6 +24,20 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
     // We load field API definition array of the MVF field on which current
     // instance of the filter operates.
     $this->options['field_definition'] = field_info_field($this->definition['field_name']);
+    // Inserting "whatever" default units, now that we have MVF field on hands,
+    // we can do it.
+    $entityreference = mvf_field_mockup($this->options['field_definition'], 'unit');
+    $entity_type = $entityreference['settings']['target_type'];
+    $efq = new EntityFieldQuery();
+    $efq->entityCondition('entity_type', $entity_type);
+    $efq->entityCondition('bundle', reset($entityreference['settings']['handler_settings']['target_bundles']));
+    $efq->range(0, 1);
+    $result = $efq->execute();
+    $default_unit_id = array_keys($result[$entity_type]);
+    $default_unit_id = reset($default_unit_id);
+    foreach ($this->options['value'] as $k => $v) {
+      $this->options['value'][$k][mvf_subfield_to_column('unit')] = $default_unit_id;
+    }
   }
 
   function operators() {
@@ -116,7 +130,7 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
     }
   }
 
-  function options_validate($form, &$form_state) {
+  function options_validate(&$form, &$form_state) {
     parent::options_validate($form, $form_state);
     // Additionally we want to validate filter data is entered.
     $operator = $this->operators();
@@ -187,7 +201,9 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
 
     foreach (units_unit_by_measure_load_multiple($measure) as $to_unit) {
       $converted_value = units_convert($this->value['value'][mvf_subfield_to_column('value')], $from_unit->machine_name, $to_unit->machine_name);
-      $where->condition(db_and()->condition($field['value'], $converted_value, $this->operator)->condition($field['unit'], array_shift(entity_extract_ids('units_unit', $to_unit))));
+      $unit_id = entity_extract_ids('units_unit', $to_unit);
+      $unit_id = array_shift($unit_id);
+      $where->condition(db_and()->condition($field['value'], $converted_value, $this->operator)->condition($field['unit'], $unit_id));
     }
 
     $this->query->add_where($this->options['group'], $where);
@@ -213,22 +229,23 @@ class mvf_handler_filter_mvf extends views_handler_filter_numeric {
         $converted_value[$k] = units_convert($this->value[$k][mvf_subfield_to_column('value')], $from_units[$k]->machine_name, $to_unit->machine_name);
       }
 
-      $to_unit = array_shift(entity_extract_ids('units_unit', $to_unit));
+      $to_unit = entity_extract_ids('units_unit', $to_unit);
+      $to_unit = array_shift($to_unit);
       switch ($this->operator) {
         case 'between':
           $where->condition(db_and()
-            ->condition($field['value'], $converted_value, $this->operator)
-            ->condition($field['unit'], $to_unit)
+              ->condition($field['value'], $converted_value, $this->operator)
+              ->condition($field['unit'], $to_unit)
           );
           break;
 
         case 'not between':
           $where->condition(db_and()
-            ->condition(db_or()
-              ->condition($field['value'], $converted_value['min'], '<=')
-              ->condition($field['value'], $converted_value['max'], '>=')
-            )
-            ->condition($field['unit'], $to_unit)
+              ->condition(db_or()
+                  ->condition($field['value'], $converted_value['min'], '<=')
+                  ->condition($field['value'], $converted_value['max'], '>=')
+              )
+              ->condition($field['unit'], $to_unit)
           );
           break;
       }
