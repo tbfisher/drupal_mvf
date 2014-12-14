@@ -852,13 +852,11 @@ function mvf_field_formatter_settings_summary($field, $instance, $view_mode) {
  * Implements hook_field_formatter_view().
  */
 function mvf_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
-  // Adding CSS for default theming.
-  drupal_add_css(drupal_get_path('module', 'mvf') . '/mvf.css', array(
-    'type' => 'file',
-    'group' => CSS_DEFAULT,
-  ));
-
   $element = array();
+
+  // Adding CSS for default theming.
+  $element['#attached']['css'] = array();
+  $element['#attached']['css'][drupal_get_path('module', 'mvf') . '/mvf.css'] = array();
 
   // In order to successfully mock up instance for a sub field, we have to know
   // view mode that corresponds to the supplied $display. We could compare each
