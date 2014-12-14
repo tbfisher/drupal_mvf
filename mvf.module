@@ -1130,11 +1130,11 @@ function _mvf_widget_process($element, &$form_state, $form) {
     $function = $mocked_instance['widget']['module'] . '_field_widget_form';
     $extra = FALSE;
     if (function_exists($function)) {
-      // Since we mock sub fields as if the cardinality is 1 (we handle
-      // real cardinality in our own field), we have to mock $items array
-      // to represent "truth" for the subfield, i.e. $items array should
-      // only include the current item and nothing else, this way we are able
-      // to mock the cardinality 1 for our sub fields.
+      // Since we mock sub fields as if the cardinality is 1 (we handle real
+      // cardinality in our own field), we have to mock $items array to
+      // represent "truth" for the subfield, i.e. $items array should only
+      // include the current item and nothing else, this way we are able to mock
+      // the cardinality 1 for our sub fields.
       $mocked_delta = 0;
       $mocked_items = isset($items[$element['#delta']]) ? array($mocked_delta => $items[$element['#delta']]) : array();
 
@@ -1180,18 +1180,18 @@ function _mvf_widget_process($element, &$form_state, $form) {
             // 'symbol' property too. Thus if our widget is set up to generate
             // options based on 'symbol' property, we have to slightly adjust
             // the already generated #options array.
-
             switch ($instance['widget']['settings']['meta_info']['unit']['label_property']) {
               case 'symbol':
                 // Let's substitute labels of entities by their symbols.
                 if (!empty($extra['#options'])) {
-                  $umids = array_keys($extra['#options']);
+                  $umids = $extra['#options'];
                   unset($umids['_none']);
+                  $umids = array_keys($umids);
                   $units = units_unit_load_multiple($umids);
                   $options = array();
-                  foreach ($units as $unit) {
+                  foreach ($units as $k => $unit) {
                     $label = $unit->{$instance['widget']['settings']['meta_info']['unit']['label_property']} ? $unit->{$instance['widget']['settings']['meta_info']['unit']['label_property']} : entity_label('units_unit', $unit);
-                    $options[entity_id('units_unit', $unit)] = $label;
+                    $options[$k] = $label;
                   }
                   // Resort the new options array, because alphabetical order
                   // probably has changed.
