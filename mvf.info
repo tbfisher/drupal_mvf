@@ -7,14 +7,9 @@ dependencies[] = units
 dependencies[] = number
 dependencies[] = entityreference
 dependencies[] = options
+dependencies[] = ctools
 
 files[] = includes/EntityReference_SelectionHandler_Generic_units_unit.class.inc
 files[] = views/mvf_handler_filter_mvf.inc
 files[] = views/mvf_handler_sort_mvf.inc
 files[] = views/mvf_handler_field_mvf.inc
-files[] = includes/NumericFieldFilterConverterMVF.inc
-files[] = includes/MVFUnitSuggestable.interface.inc
-files[] = includes/MVFUnitSuggesterAbstract.class.inc
-files[] = includes/MVFUnitSuggesterHardCoded.class.inc
-files[] = includes/MVFUnitSuggesterOriginal.class.inc
-files[] = includes/MVFUnitSuggesterLocale.class.inc

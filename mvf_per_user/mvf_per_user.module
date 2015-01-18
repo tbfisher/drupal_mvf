@@ -16,13 +16,17 @@ function mvf_per_user_field_delete_field($field) {
 }
 
 /**
- * Implements hook_mvf_unit_suggester_info().
+ * Implements hook_ctools_plugin_directory().
  */
-function mvf_per_user_mvf_unit_suggester_info() {
-  $output = array(
-    'MVFPerUserUnitSuggesterUser',
-  );
-  return $output;
+function mvf_per_user_ctools_plugin_directory($owner, $plugin_type) {
+  switch ($owner) {
+    case 'mvf':
+      switch ($plugin_type) {
+        case 'unit_suggesters':
+          return 'plugins/' . $plugin_type;
+      }
+      break;
+  }
 }
 
 /**

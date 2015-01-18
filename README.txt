@@ -16,10 +16,11 @@ The Measure Value Field module requires the following modules:
 * Units
 * Entity Reference
 * Number
+* CTools
 
 -- INTEGRATION --
 Measured Value Field module currently integrates with the following modules:
-* Views - by providing its custom filter handler
+* Views - by providing its custom handlers
 
 -- INSTALLATION --
 
