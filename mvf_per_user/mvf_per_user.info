@@ -1,6 +1,0 @@
-name = MVF Output Unit per User
-description = Module that allows to specify output units for MVF fields on per user basis.
-package = Fields
-core = 7.x
-
-dependencies[] = mvf

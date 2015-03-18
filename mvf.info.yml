@@ -1,0 +1,7 @@
+name: Measured Value Field
+type: module
+description: Define a field with an amount and a unit of measurement.
+core: 8.x
+package: Field types
+dependencies:
+  - unitsapi
