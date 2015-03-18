@@ -40,7 +40,7 @@ class MvfDefaultWidget extends NumberWidget {
     $field_settings = $this->getFieldSettings();
     $units = \Drupal::service('unitsapi.units');
     $options = $units::getUnitOptions($field_settings['quantity']);
-    $enabled = array_filter($field_settings['units'][$field_settings['quantity']]);
+    $enabled = array_filter($field_settings['units']);
     $options = array_intersect_key($options, $enabled);
 
     $element['unit'] = array(
